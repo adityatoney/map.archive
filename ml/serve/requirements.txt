@@ -1,0 +1,6 @@
+fastapi>=0.109
+uvicorn[standard]
+torch
+transformers
+sentence-transformers
+numpy
