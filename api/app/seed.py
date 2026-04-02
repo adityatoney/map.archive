@@ -113,12 +113,12 @@ async def seed():
                 organ_system=entry_data.get("organ_system"),
                 report_section=entry_data.get("report_section"),
                 score=score,
-                green_ratio=1.0 - score,
-                red_ratio=score,
+                green_ratio=score,
+                red_ratio=1.0 - score,
                 risk_tier=(
-                    "critical" if score >= 0.75
-                    else "high" if score >= 0.5
-                    else "moderate" if score >= 0.25
+                    "critical" if score < 0.1
+                    else "high" if score < 0.2
+                    else "moderate" if score < 0.4
                     else "low"
                 ),
             )
@@ -146,12 +146,12 @@ async def seed():
                 organ_system=entry_data.get("organ_system"),
                 report_section=entry_data.get("report_section"),
                 score=score,
-                green_ratio=1.0 - score,
-                red_ratio=score,
+                green_ratio=score,
+                red_ratio=1.0 - score,
                 risk_tier=(
-                    "critical" if score >= 0.75
-                    else "high" if score >= 0.5
-                    else "moderate" if score >= 0.25
+                    "critical" if score < 0.1
+                    else "high" if score < 0.2
+                    else "moderate" if score < 0.4
                     else "low"
                 ),
             )

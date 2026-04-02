@@ -27,6 +27,10 @@ class ScanSession(Base, UUIDMixin, TimestampMixin):
     scan_date: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+    # The timestamp printed on the PDF report (e.g., "3/30/2026 3:46:05")
+    report_generated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     raw_report_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     report_type: Mapped[str] = mapped_column(
         String(20), default="pdf", nullable=False

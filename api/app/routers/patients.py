@@ -12,6 +12,7 @@ from sqlalchemy.orm import selectinload
 from app.models.base import get_db
 from app.models.patient import Patient
 from app.models.session import ScanSession
+from app.models.trend import ConditionTrend
 from app.utils.auth import get_current_user
 from app.utils.encryption import decrypt_phi
 
@@ -33,6 +34,7 @@ class PatientSummary(BaseModel):
 class SessionSummary(BaseModel):
     id: str
     scan_date: str
+    report_generated_at: str | None = None
     report_type: str
     analysis_status: str
     organ_system: str | None
@@ -103,6 +105,7 @@ async def get_patient_history(
             SessionSummary(
                 id=str(s.id),
                 scan_date=s.scan_date.isoformat(),
+                report_generated_at=s.report_generated_at.isoformat() if s.report_generated_at else None,
                 report_type=s.report_type,
                 analysis_status=s.analysis_status,
                 organ_system=s.organ_system,
@@ -111,6 +114,77 @@ async def get_patient_history(
             for s in sessions
         ],
         total_sessions=len(sessions),
+    )
+
+
+class TrendResponse(BaseModel):
+    condition_name: str
+    condition_icd10: str | None
+    organ_system: str | None
+    trend_direction: str
+    trend_slope: float
+    sessions_analyzed: int
+    first_score: float
+    last_score: float
+    change_points: list[dict] | None
+
+
+class PatientTrendsResponse(BaseModel):
+    patient_id: str
+    trends: list[TrendResponse]
+    total_trends: int
+    summary: dict
+
+
+@router.get("/{patient_id}/trends", response_model=PatientTrendsResponse)
+async def get_patient_trends(
+    patient_id: str,
+    db: AsyncSession = Depends(get_db),
+    _user=Depends(get_current_user),
+):
+    """Get temporal trend analysis for a patient's conditions."""
+    # Verify patient exists
+    patient_result = await db.execute(
+        select(Patient).where(Patient.id == uuid.UUID(patient_id))
+    )
+    if not patient_result.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Patient not found")
+
+    result = await db.execute(
+        select(ConditionTrend)
+        .where(ConditionTrend.patient_id == uuid.UUID(patient_id))
+        .order_by(ConditionTrend.trend_slope.desc())
+    )
+    trends = result.scalars().all()
+
+    direction_counts = {
+        "improving": 0,
+        "worsening": 0,
+        "stable": 0,
+        "volatile": 0,
+    }
+    for t in trends:
+        if t.trend_direction in direction_counts:
+            direction_counts[t.trend_direction] += 1
+
+    return PatientTrendsResponse(
+        patient_id=patient_id,
+        trends=[
+            TrendResponse(
+                condition_name=t.condition_name,
+                condition_icd10=t.condition_icd10,
+                organ_system=t.organ_system,
+                trend_direction=t.trend_direction,
+                trend_slope=t.trend_slope,
+                sessions_analyzed=t.sessions_analyzed,
+                first_score=t.first_score,
+                last_score=t.last_score,
+                change_points=t.change_points,
+            )
+            for t in trends
+        ],
+        total_trends=len(trends),
+        summary=direction_counts,
     )
 
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import {
@@ -14,7 +14,9 @@ import {
   Filter,
   Heart,
   Loader2,
+  RefreshCw,
   Search,
+  Trash2,
   X,
 } from "lucide-react";
 import {
@@ -45,7 +47,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Progress } from "@/components/ui/progress";
-import { useReport, useAnalyzeReport } from "@/lib/hooks/use-api";
+import { useReport, useAnalyzeReport, useDeleteReport } from "@/lib/hooks/use-api";
 import type { ScanEntry } from "@/lib/api-client";
 
 // --------------- Constants ---------------
@@ -96,13 +98,14 @@ function RiskBadge({ tier }: { tier: string | null | undefined }) {
 }
 
 function ScoreBar({ score }: { score: number }) {
-  const percentage = score * 100;
+  // Inverted: lower score = higher risk, so fill bar inversely
+  const riskPercentage = (1 - score) * 100;
   const color =
-    score >= 0.75
+    score < 0.1
       ? "bg-red-500"
-      : score >= 0.5
+      : score < 0.2
       ? "bg-orange-500"
-      : score >= 0.25
+      : score < 0.4
       ? "bg-amber-500"
       : "bg-green-500";
 
@@ -111,7 +114,7 @@ function ScoreBar({ score }: { score: number }) {
       <div className="flex-1 h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
         <div
           className={`h-full rounded-full ${color}`}
-          style={{ width: `${percentage}%` }}
+          style={{ width: `${riskPercentage}%` }}
         />
       </div>
       <span className="text-xs font-mono w-10 text-right">
@@ -550,6 +553,9 @@ export default function ReportPage() {
     error,
   } = useReport(sessionId, { poll: true });
   const analyze = useAnalyzeReport();
+  const deleteReport = useDeleteReport();
+  const router = useRouter();
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   // Filter state
   const [riskFilter, setRiskFilter] = useState<RiskTier | "all">("all");
@@ -766,7 +772,10 @@ export default function ReportPage() {
           </Button>
           <h1 className="text-2xl font-bold">Scan Report</h1>
           <p className="text-gray-500">
-            {new Date(report.scan_date).toLocaleDateString()} |{" "}
+            {report.report_generated_at
+              ? `Report: ${new Date(report.report_generated_at).toLocaleString()} | `
+              : ""}
+            Uploaded: {new Date(report.scan_date).toLocaleDateString()} |{" "}
             {report.report_type.toUpperCase()} | {report.entry_count} conditions
           </p>
         </div>
@@ -786,8 +795,26 @@ export default function ReportPage() {
               Run Analysis
             </Button>
           )}
+          {report.analysis_status === "processing" && (
+            <Button variant="outline" disabled>
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              Analyzing...
+            </Button>
+          )}
           {report.analysis_status === "completed" && (
             <>
+              <Button
+                variant="outline"
+                onClick={() => analyze.mutate(sessionId)}
+                disabled={analyze.isPending}
+              >
+                {analyze.isPending ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                )}
+                Re-analyze
+              </Button>
               <Button variant="outline" asChild>
                 <Link href={`/dashboard/insights/${sessionId}`}>
                   <Brain className="h-4 w-4 mr-2" /> Insights
@@ -800,6 +827,39 @@ export default function ReportPage() {
               </Button>
             </>
           )}
+          <Button
+            variant="ghost"
+            size="icon"
+            className={
+              confirmDelete
+                ? "text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950"
+                : "text-gray-400 hover:text-gray-600"
+            }
+            onClick={async () => {
+              if (!confirmDelete) {
+                setConfirmDelete(true);
+                setTimeout(() => setConfirmDelete(false), 3000);
+                return;
+              }
+              try {
+                await deleteReport.mutateAsync(sessionId);
+                router.push("/dashboard");
+              } catch (err) {
+                alert(
+                  `Failed to delete: ${err instanceof Error ? err.message : "Unknown error"}`
+                );
+                setConfirmDelete(false);
+              }
+            }}
+            disabled={deleteReport.isPending}
+            title={
+              confirmDelete
+                ? "Click again to confirm delete"
+                : "Delete this report"
+            }
+          >
+            <Trash2 className="h-4 w-4" />
+          </Button>
         </div>
       </div>
 

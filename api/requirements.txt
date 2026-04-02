@@ -42,10 +42,14 @@ httpx
 # Neo4j
 neo4j
 
-# Science (clustering)
+# Science (clustering + change-point detection)
 numpy
 scikit-learn>=1.3
 umap-learn
+ruptures
+
+# LLM summaries (Claude Agent SDK)
+claude-agent-sdk
 
 # Testing
 pytest

@@ -1,4 +1,4 @@
-.PHONY: up down up-ml up-full logs ml-logs db-shell migrate migration seed seed-kg test-api test-web lint clean warm-model ml-health
+.PHONY: up down up-ml up-full logs ml-logs db-shell migrate migration seed seed-kg enrich-snomed test-api test-web lint clean warm-model ml-health
 
 up:
 	docker compose up -d
@@ -32,6 +32,12 @@ seed:
 
 seed-kg:
 	docker compose exec api python -m app.seed_knowledge_graph
+
+enrich-snomed:
+	docker compose exec api python -m app.enrich_snomed
+
+enrich-snomed-dry:
+	docker compose exec api python -m app.enrich_snomed --dry-run
 
 test-api:
 	docker compose exec api pytest -v

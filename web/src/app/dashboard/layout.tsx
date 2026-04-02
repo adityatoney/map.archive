@@ -20,6 +20,7 @@ import {
   Menu,
   AlertTriangle,
   Trash2,
+  Settings,
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import { Button } from "@/components/ui/button";
@@ -46,6 +47,7 @@ const NAV_ITEMS = [
   { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
   { href: "/dashboard/upload", label: "Upload Scan", icon: FileUp },
   { href: "/dashboard/compare", label: "Compare", icon: GitCompare },
+  { href: "/dashboard/settings", label: "Settings", icon: Settings },
 ];
 
 const DYNAMIC_NAV_ITEMS = [

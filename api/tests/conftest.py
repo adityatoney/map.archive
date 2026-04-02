@@ -15,7 +15,6 @@ os.environ["REDIS_URL"] = "redis://localhost:6379/1"
 os.environ["ENCRYPTION_KEY"] = "dGVzdC1lbmNyeXB0aW9uLWtleS1mb3ItdGVzdGluZw=="
 os.environ["SECRET_KEY"] = "test-secret-key"
 os.environ["UMLS_API_KEY"] = "mock"
-os.environ["ANTHROPIC_API_KEY"] = "mock"
 os.environ["NEO4J_ENABLED"] = "false"
 os.environ["ENVIRONMENT"] = "testing"
 

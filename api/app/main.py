@@ -27,8 +27,12 @@ def create_app() -> FastAPI:
         allow_origins=[
             "http://localhost:3000",
             "http://localhost:3010",
+            "http://localhost:8000",
+            "http://localhost:8010",
             "http://127.0.0.1:3000",
             "http://127.0.0.1:3010",
+            "http://127.0.0.1:8000",
+            "http://127.0.0.1:8010",
         ],
         allow_credentials=True,
         allow_methods=["*"],
@@ -36,7 +40,7 @@ def create_app() -> FastAPI:
     )
 
     # Include routers
-    from app.routers import auth, reports, patients, insights, recovery, compare
+    from app.routers import admin, auth, reports, patients, insights, recovery, compare
 
     app.include_router(auth.router, prefix="/api/v1/auth", tags=["auth"])
     app.include_router(reports.router, prefix="/api/v1/reports", tags=["reports"])
@@ -44,6 +48,7 @@ def create_app() -> FastAPI:
     app.include_router(insights.router, prefix="/api/v1/insights", tags=["insights"])
     app.include_router(recovery.router, prefix="/api/v1/recovery", tags=["recovery"])
     app.include_router(compare.router, prefix="/api/v1/reports", tags=["compare"])
+    app.include_router(admin.router, prefix="/api/v1/admin", tags=["admin"])
 
     @app.get("/health")
     async def health_check():

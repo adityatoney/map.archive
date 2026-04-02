@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.base import get_db
 from app.models.user import User
-from app.utils.auth import create_access_token, verify_password
+from app.utils.auth import create_access_token, get_current_user, verify_password
 
 router = APIRouter()
 
@@ -48,6 +48,17 @@ async def login(request: LoginRequest, db: AsyncSession = Depends(get_db)):
             detail="Account is disabled",
         )
 
+    token = create_access_token(data={"sub": user.email})
+    return LoginResponse(
+        access_token=token,
+        user_id=str(user.id),
+        email=user.email,
+    )
+
+
+@router.post("/refresh", response_model=LoginResponse)
+async def refresh_token(user=Depends(get_current_user)):
+    """Refresh an existing JWT token (must still be valid)."""
     token = create_access_token(data={"sub": user.email})
     return LoginResponse(
         access_token=token,

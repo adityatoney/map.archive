@@ -36,6 +36,7 @@ export interface ScanSession {
   id: string;
   patient_id: string;
   scan_date: string;
+  report_generated_at?: string | null;
   report_type: string;
   analysis_status: string;
   organ_system?: string | null;
@@ -127,6 +128,20 @@ export interface UploadResult {
   message: string;
 }
 
+export interface RiskConfig {
+  id: string;
+  score_mode: "inverted" | "normal";
+  tier_thresholds: Record<string, [number, number]>;
+  name: string;
+  is_active: boolean;
+}
+
+export interface RiskConfigUpdate {
+  score_mode?: "inverted" | "normal";
+  tier_thresholds?: Record<string, [number, number]>;
+  name?: string;
+}
+
 export interface LoginResult {
   access_token: string;
   token_type: string;
@@ -170,6 +185,10 @@ class ApiClient {
     });
 
     if (res.status === 401) {
+      // Token expired — redirect to login if running in browser
+      if (typeof window !== "undefined") {
+        window.location.href = "/login?error=SessionExpired";
+      }
       throw new Error("Unauthorized");
     }
 
@@ -250,6 +269,12 @@ class ApiClient {
     });
   }
 
+  async deleteReport(sessionId: string): Promise<{ detail: string }> {
+    return this.fetch(`/api/v1/reports/${sessionId}`, {
+      method: "DELETE",
+    });
+  }
+
   // Insights
   async getInsights(sessionId: string): Promise<InsightsData> {
     return this.fetch(`/api/v1/insights/${sessionId}`);
@@ -271,6 +296,18 @@ class ApiClient {
         session_id_1: sessionId1,
         session_id_2: sessionId2,
       }),
+    });
+  }
+
+  // Admin — Risk Config
+  async getRiskConfig(): Promise<RiskConfig> {
+    return this.fetch("/api/v1/admin/risk-config");
+  }
+
+  async updateRiskConfig(update: RiskConfigUpdate): Promise<RiskConfig> {
+    return this.fetch("/api/v1/admin/risk-config", {
+      method: "PUT",
+      body: JSON.stringify(update),
     });
   }
 

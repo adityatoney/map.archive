@@ -7,6 +7,7 @@ from app.models.session import ScanSession
 from app.models.entry import ScanEntry
 from app.models.trend import ConditionTrend
 from app.models.recovery import RecoveryPlan
+from app.models.risk_config import RiskConfig
 
 __all__ = [
     "Base",
@@ -16,4 +17,5 @@ __all__ = [
     "ScanEntry",
     "ConditionTrend",
     "RecoveryPlan",
+    "RiskConfig",
 ]

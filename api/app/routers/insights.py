@@ -13,6 +13,7 @@ from app.models.base import get_db
 from app.models.entry import ScanEntry
 from app.models.session import ScanSession
 from app.utils.auth import get_current_user
+from app.utils.risk_tiers import get_active_risk_config, score_to_tier
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -60,6 +61,8 @@ async def get_insights(
     _user=Depends(get_current_user),
 ):
     """Get generated insights for a scan session."""
+    config = await get_active_risk_config(db)
+
     result = await db.execute(
         select(ScanSession)
         .options(selectinload(ScanSession.entries))
@@ -185,12 +188,7 @@ async def get_insights(
         risk_summary[organ] = {
             "avg_score": round(avg, 3),
             "condition_count": len(scores),
-            "risk_tier": (
-                "critical" if avg >= 0.75
-                else "high" if avg >= 0.5
-                else "moderate" if avg >= 0.25
-                else "low"
-            ),
+            "risk_tier": score_to_tier(avg, config),
         }
 
     # Extract UMAP coords from cluster metadata if available

@@ -11,6 +11,7 @@ from sqlalchemy.orm import selectinload
 from app.models.base import get_db
 from app.models.session import ScanSession
 from app.utils.auth import get_current_user
+from app.utils.risk_tiers import get_active_risk_config, is_score_inverted
 
 router = APIRouter()
 
@@ -47,6 +48,9 @@ async def compare_sessions(
     _user=Depends(get_current_user),
 ):
     """Compare two scan sessions side-by-side."""
+    config = await get_active_risk_config(db)
+    inverted = is_score_inverted(config)
+
     # Load both sessions with entries
     result1 = await db.execute(
         select(ScanSession)
@@ -90,10 +94,12 @@ async def compare_sessions(
             delta = round(score2 - score1, 4)
             if abs(delta) < 0.01:
                 status = "stable"
-            elif delta < 0:
-                status = "improved"
+            elif inverted:
+                # Inverted: rising score = healthier = improved
+                status = "improved" if delta > 0 else "worsened"
             else:
-                status = "worsened"
+                # Normal: falling score = healthier = improved
+                status = "improved" if delta < 0 else "worsened"
         elif score1 is None:
             delta = None
             status = "new"

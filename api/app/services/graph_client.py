@@ -160,6 +160,61 @@ class GraphClient:
             logger.warning("Neo4j query failed (lifestyle_interventions): %s", e)
             return []
 
+    async def get_condition_connectivity(
+        self, icd_list: list[str]
+    ) -> dict[str, dict[str, Any]]:
+        """Get knowledge graph connectivity metrics for each condition.
+
+        Returns a dict keyed by ICD-10 code with:
+          - pathway_count: number of pathways this condition participates in
+          - comorbidity_count: number of comorbid conditions in the graph
+          - intervention_count: nutritional + lifestyle interventions linked
+          - connectivity_score: weighted composite (0-1 normalized)
+        """
+        driver = self._get_driver()
+        if not driver:
+            return {}
+
+        try:
+            query = """
+            MATCH (d:Disease)
+            WHERE d.icd10 IN $icd_list
+            OPTIONAL MATCH (d)-[:PART_OF_PATHWAY]->(p:Pathway)
+            OPTIONAL MATCH (d)-[:COMORBID_WITH]-(c:Disease)
+            OPTIONAL MATCH (d)-[:SUPPORTED_BY]->(n:NutritionalFactor)
+            OPTIONAL MATCH (d)-[:RESPONDS_TO]->(li:LifestyleIntervention)
+            WITH d,
+                 count(DISTINCT p) AS pathways,
+                 count(DISTINCT c) AS comorbidities,
+                 count(DISTINCT n) + count(DISTINCT li) AS interventions
+            RETURN d.icd10 AS icd10, d.name AS name,
+                   pathways, comorbidities, interventions
+            """
+            with driver.session() as session:
+                result = session.run(query, icd_list=icd_list)
+                metrics = {}
+                max_score = 1  # avoid division by zero
+                rows = []
+                for record in result:
+                    row = dict(record)
+                    # Weighted raw score: pathways(3x) + comorbidities(2x) + interventions(1x)
+                    raw = row["pathways"] * 3 + row["comorbidities"] * 2 + row["interventions"]
+                    row["raw_connectivity"] = raw
+                    max_score = max(max_score, raw)
+                    rows.append(row)
+
+                for row in rows:
+                    metrics[row["icd10"]] = {
+                        "pathway_count": row["pathways"],
+                        "comorbidity_count": row["comorbidities"],
+                        "intervention_count": row["interventions"],
+                        "connectivity_score": row["raw_connectivity"] / max_score,
+                    }
+                return metrics
+        except Exception as e:
+            logger.warning("Neo4j query failed (condition_connectivity): %s", e)
+            return {}
+
     def close(self):
         """Close the Neo4j driver."""
         if self._driver:

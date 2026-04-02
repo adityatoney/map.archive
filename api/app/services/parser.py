@@ -146,19 +146,42 @@ def _extract_text_ocr(file_bytes: bytes) -> str:
         return ""
 
 
+def _extract_report_timestamp(text: str) -> str | None:
+    """Extract the report generation timestamp from the PDF text.
+
+    The Med Bed report has a generation timestamp in the footer of each page,
+    e.g., "3/30/2026 3:46:05". We extract the first occurrence.
+    """
+    match = RE_TIMESTAMP.search(text)
+    if match:
+        raw = match.group(0).strip()
+        logger.info("Extracted report generation timestamp: %s", raw)
+        return raw
+    return None
+
+
 def _parse_medbed_text(text: str) -> dict:
     """Parse the extracted text from a Med Bed report into structured data."""
     patient_info = _extract_patient_info(text)
+
+    # Extract the report generation timestamp BEFORE stripping timestamps
+    report_generated_at = _extract_report_timestamp(text)
+
     entries = _extract_entries(text)
 
     logger.info(
-        "Parsed Med Bed report: patient=%s %s, entries=%d",
+        "Parsed Med Bed report: patient=%s %s, entries=%d, generated_at=%s",
         patient_info.get("first_name", "?"),
         patient_info.get("last_name", "?"),
         len(entries),
+        report_generated_at,
     )
 
-    return {"patient_info": patient_info, "entries": entries}
+    return {
+        "patient_info": patient_info,
+        "entries": entries,
+        "report_generated_at": report_generated_at,
+    }
 
 
 def _extract_patient_info(text: str) -> dict:

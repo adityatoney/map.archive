@@ -1,8 +1,11 @@
 """Report upload and retrieval router."""
 
+import logging
 import os
 import uuid
 from datetime import datetime, timezone
+
+logger = logging.getLogger(__name__)
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from fastapi.responses import FileResponse
@@ -47,6 +50,7 @@ class SessionOut(BaseModel):
     id: str
     patient_id: str
     scan_date: str
+    report_generated_at: str | None = None
     report_type: str
     analysis_status: str
     organ_system: str | None
@@ -170,10 +174,26 @@ async def upload_report(
         db.add(patient)
         await db.flush()
 
-    # Create scan session
+    # Parse the report generation timestamp from the PDF footer
+    report_generated_at = None
+    raw_ts = parsed.get("report_generated_at")
+    if raw_ts:
+        for fmt in ("%m/%d/%Y %H:%M:%S", "%m/%d/%Y %I:%M:%S", "%d/%m/%Y %H:%M:%S"):
+            try:
+                report_generated_at = datetime.strptime(raw_ts, fmt).replace(
+                    tzinfo=timezone.utc
+                )
+                break
+            except ValueError:
+                continue
+        if not report_generated_at:
+            logger.warning("Could not parse report timestamp: %s", raw_ts)
+
+    # Create scan session — use report generation date as scan_date if available
     session = ScanSession(
         patient_id=patient.id,
-        scan_date=datetime.now(timezone.utc),
+        scan_date=report_generated_at or datetime.now(timezone.utc),
+        report_generated_at=report_generated_at,
         raw_report_url=upload_path,
         report_type=report_type,
         analysis_status="pending",
@@ -192,8 +212,8 @@ async def upload_report(
             organ_system=entry_data.get("organ_system"),
             report_section=entry_data.get("report_section"),
             score=score,
-            green_ratio=1.0 - score,  # Derived from score
-            red_ratio=score,           # Derived from score
+            green_ratio=score,         # Higher score = healthier (inverted mode)
+            red_ratio=1.0 - score,     # Lower score = more risk
             marker=entry_data.get("marker"),
         )
         db.add(entry)
@@ -229,6 +249,7 @@ async def get_report(
         id=str(session.id),
         patient_id=str(session.patient_id),
         scan_date=session.scan_date.isoformat(),
+        report_generated_at=session.report_generated_at.isoformat() if session.report_generated_at else None,
         report_type=session.report_type,
         analysis_status=session.analysis_status,
         organ_system=session.organ_system,
@@ -311,3 +332,42 @@ async def download_report(
         media_type="application/octet-stream",
         filename=filename,
     )
+
+
+@router.delete("/{session_id}")
+async def delete_report(
+    session_id: str,
+    db: AsyncSession = Depends(get_db),
+    _user=Depends(get_current_user),
+):
+    """Delete a scan session and all associated data (entries, recovery plan, trends)."""
+    result = await db.execute(
+        select(ScanSession).where(ScanSession.id == uuid.UUID(session_id))
+    )
+    session = result.scalar_one_or_none()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    # Delete uploaded file from disk
+    if session.raw_report_url:
+        try:
+            os.unlink(session.raw_report_url)
+        except OSError:
+            logger.warning("Could not delete report file: %s", session.raw_report_url)
+
+    # Explicitly delete recovery plan (FK has NO ACTION, not CASCADE)
+    from sqlalchemy import delete as sa_delete
+    from app.models.recovery import RecoveryPlan
+    await db.execute(
+        sa_delete(RecoveryPlan).where(RecoveryPlan.session_id == session.id)
+    )
+
+    # Explicitly delete entries (FK has NO ACTION)
+    await db.execute(
+        sa_delete(ScanEntry).where(ScanEntry.session_id == session.id)
+    )
+
+    await db.delete(session)
+    await db.flush()
+
+    return {"detail": f"Session {session_id} deleted successfully"}

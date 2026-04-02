@@ -37,8 +37,8 @@ class Settings(BaseSettings):
 
     # External APIs
     UMLS_API_KEY: str = "mock"
-    ANTHROPIC_API_KEY: str = "mock"
-    KEGG_API_ENABLED: bool = False
+    ANTHROPIC_MODEL: str = "claude-sonnet-4-6-20250514"
+    KEGG_API_ENABLED: bool = True
 
     # File storage
     UPLOAD_DIR: str = "/app/uploads"

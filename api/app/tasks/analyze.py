@@ -1,7 +1,8 @@
 """Celery task for the full analysis pipeline.
 
 Pipeline: load entries → normalize (ICD-10/SNOMED/FMA) → embed →
-cluster → risk score → generate recovery plan → update DB.
+cluster → trend analysis → composite risk score → KG query →
+generate recovery plan → update DB.
 """
 
 import asyncio
@@ -29,11 +30,15 @@ async def _run_pipeline(session_id: str):
     """Async implementation of the analysis pipeline."""
     from app.models.recovery import RecoveryPlan
     from app.models.session import ScanSession
+    from app.models.trend import ConditionTrend
     from app.services.clusterer import ClustererService
     from app.services.embedder import EmbedderService
+    from app.services.graph_client import GraphClient
     from app.services.normalizer import NormalizerService
     from app.services.recovery_planner import RecoveryPlannerService
     from app.services.risk_engine import RiskEngineService
+    from app.services.trend_analyzer import TrendAnalyzerService
+    from app.utils.risk_tiers import get_active_risk_config, is_score_inverted
 
     Session = _get_async_session()
 
@@ -56,6 +61,9 @@ async def _run_pipeline(session_id: str):
                 session_id,
                 len(entries),
             )
+
+            # Load risk configuration for score interpretation
+            config = await get_active_risk_config(db)
 
             # Step 2: Normalize conditions (ICD-10, SNOMED, FMA)
             normalizer = NormalizerService()
@@ -118,8 +126,23 @@ async def _run_pipeline(session_id: str):
 
             logger.info("Clustering complete for session %s", session_id)
 
-            # Step 5: Risk scoring
-            risk_engine = RiskEngineService()
+            # Step 4b: Temporal trend analysis
+            trend_analyzer = TrendAnalyzerService()
+
+            # Query all previous completed sessions for this patient
+            prev_sessions_result = await db.execute(
+                select(ScanSession)
+                .options(selectinload(ScanSession.entries))
+                .where(
+                    ScanSession.patient_id == session.patient_id,
+                    ScanSession.analysis_status == "completed",
+                    ScanSession.id != session.id,
+                )
+                .order_by(ScanSession.scan_date)
+            )
+            prev_sessions = prev_sessions_result.scalars().all()
+
+            # Build sessions_data including previous and current session
             entry_dicts = [
                 {
                     "condition_name": e.condition_name,
@@ -131,27 +154,98 @@ async def _run_pipeline(session_id: str):
                 for e in entries
             ]
 
+            sessions_data = []
+            for s in prev_sessions:
+                sessions_data.append(
+                    {
+                        "session_id": str(s.id),
+                        "scan_date": s.scan_date.isoformat()
+                        if s.scan_date
+                        else "",
+                        "entries": [
+                            {
+                                "condition_name": e.condition_name,
+                                "score": e.score,
+                                "condition_icd10": e.condition_icd10,
+                                "organ_system": e.organ_system,
+                            }
+                            for e in s.entries
+                        ],
+                    }
+                )
+
+            # Add current session
+            sessions_data.append(
+                {
+                    "session_id": session_id,
+                    "scan_date": session.scan_date.isoformat()
+                    if session.scan_date
+                    else "",
+                    "entries": entry_dicts,
+                }
+            )
+
+            trends = await trend_analyzer.analyze_patient_trends(
+                str(session.patient_id),
+                sessions_data,
+                score_inverted=is_score_inverted(config),
+            )
+
+            # Persist trends: delete old, insert new (upsert pattern)
+            await db.execute(
+                delete(ConditionTrend).where(
+                    ConditionTrend.patient_id == session.patient_id
+                )
+            )
+            for t in trends:
+                db.add(
+                    ConditionTrend(
+                        patient_id=session.patient_id,
+                        condition_icd10=t["condition_icd10"],
+                        condition_name=t["condition_name"],
+                        organ_system=t["organ_system"],
+                        trend_direction=t["trend_direction"],
+                        trend_slope=t["trend_slope"],
+                        sessions_analyzed=t["sessions_analyzed"],
+                        first_score=t["first_score"],
+                        last_score=t["last_score"],
+                        change_points=t["change_points"] or None,
+                    )
+                )
+
+            logger.info(
+                "Trend analysis complete for session %s (%d trends)",
+                session_id,
+                len(trends),
+            )
+
+            # Step 5: Risk scoring (with composite formula)
+            risk_engine = RiskEngineService()
+
             for entry in entries:
                 tier = await risk_engine.compute_entry_risk(
-                    {"score": entry.score}
+                    {"score": entry.score}, config=config
                 )
                 entry.risk_tier = tier
+                # Fix green/red ratios based on score mode
+                entry.green_ratio = entry.score
+                entry.red_ratio = 1.0 - entry.score
 
-            organ_risks = await risk_engine.compute_organ_risk(entry_dicts)
-            logger.info("Risk scoring complete for session %s", session_id)
-
-            # Step 5b: Query knowledge graph for interventions
-            from app.services.graph_client import GraphClient
-
+            # Step 5a: Query knowledge graph for interventions + pathway counts + connectivity
             graph_client = GraphClient()
             icd_list = list(
                 set(e.condition_icd10 for e in entries if e.condition_icd10)
             )
             graph_interventions: list[dict] = []
+            pathway_counts: dict[str, int] = {}
+            graph_connectivity: dict = {}
+
             try:
-                graph_nutritional = await graph_client.find_interventions(icd_list)
-                graph_lifestyle = await graph_client.find_lifestyle_interventions(
+                graph_nutritional = await graph_client.find_interventions(
                     icd_list
+                )
+                graph_lifestyle = (
+                    await graph_client.find_lifestyle_interventions(icd_list)
                 )
                 graph_interventions = graph_nutritional + [
                     {**li, "type": "lifestyle"} for li in graph_lifestyle
@@ -161,12 +255,61 @@ async def _run_pipeline(session_id: str):
                     len(graph_interventions),
                     session_id,
                 )
+
+                # Query per-condition connectivity for priority ranking
+                try:
+                    graph_connectivity = await graph_client.get_condition_connectivity(
+                        icd_list
+                    )
+                    logger.info(
+                        "Knowledge graph connectivity: %d conditions with KG data",
+                        len(graph_connectivity),
+                    )
+                except Exception as conn_err:
+                    logger.warning(
+                        "KG connectivity query failed (non-fatal): %s",
+                        conn_err,
+                    )
+
+                # Precompute pathway counts per organ system for composite risk
+                try:
+                    systemic = await graph_client.find_systemic_patterns(
+                        icd_list
+                    )
+                    for sp in systemic:
+                        for disease_name in [
+                            sp["disease1"],
+                            sp["disease2"],
+                        ]:
+                            for e in entry_dicts:
+                                if e["condition_name"] == disease_name:
+                                    organ = e.get("organ_system", "Unknown")
+                                    pathway_counts[organ] = (
+                                        pathway_counts.get(organ, 0)
+                                        + sp.get("shared_pathways", 0)
+                                    )
+                except Exception as pw_err:
+                    logger.warning(
+                        "Pathway count precomputation failed (non-fatal): %s",
+                        pw_err,
+                    )
+
             except Exception as kg_err:
                 logger.warning(
                     "Knowledge graph query failed (non-fatal): %s", kg_err
                 )
             finally:
                 graph_client.close()
+
+            # Step 5b: Composite organ risk scoring
+            organ_risks = await risk_engine.compute_organ_risk(
+                entry_dicts,
+                trends=trends,
+                cluster_data=cluster_result,
+                pathway_counts=pathway_counts,
+                config=config,
+            )
+            logger.info("Risk scoring complete for session %s", session_id)
 
             # Step 6: Generate recovery plan
             planner = RecoveryPlannerService()
@@ -177,6 +320,9 @@ async def _run_pipeline(session_id: str):
                 organ_risks=organ_risks,
                 clusters=cluster_result,
                 graph_interventions=graph_interventions or None,
+                trends=trends,
+                config=config,
+                graph_connectivity=graph_connectivity or None,
             )
 
             # Delete existing recovery plan if re-analyzing
@@ -193,9 +339,15 @@ async def _run_pipeline(session_id: str):
                 summary=plan_data["summary"],
                 organ_system_breakdown=plan_data["organ_system_breakdown"],
                 priority_conditions=plan_data["priority_conditions"],
-                recommended_interventions=plan_data["recommended_interventions"],
-                lifestyle_recommendations=plan_data["lifestyle_recommendations"],
-                nutritional_recommendations=plan_data["nutritional_recommendations"],
+                recommended_interventions=plan_data[
+                    "recommended_interventions"
+                ],
+                lifestyle_recommendations=plan_data[
+                    "lifestyle_recommendations"
+                ],
+                nutritional_recommendations=plan_data[
+                    "nutritional_recommendations"
+                ],
                 monitoring_plan=plan_data["monitoring_plan"],
                 disclaimer=plan_data["disclaimer"],
             )
@@ -206,9 +358,11 @@ async def _run_pipeline(session_id: str):
 
             await db.commit()
             logger.info(
-                "Analysis pipeline completed for session %s (embedding_source=%s)",
+                "Analysis pipeline completed for session %s "
+                "(embedding_source=%s, trends=%d)",
                 session_id,
                 session.embedding_source,
+                len(trends),
             )
 
         except Exception as e:

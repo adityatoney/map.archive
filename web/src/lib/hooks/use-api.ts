@@ -18,6 +18,13 @@ export function useApiToken(): boolean {
   useEffect(() => {
     if (status === "authenticated" && session) {
       const s = session as unknown as Record<string, unknown>;
+
+      // If the token refresh failed server-side, redirect to login
+      if (s?.error === "RefreshFailed") {
+        window.location.href = "/login?error=SessionExpired";
+        return;
+      }
+
       if (s?.accessToken) {
         apiClient.setToken(s.accessToken as string);
         setReady(true);
@@ -93,8 +100,27 @@ export function useUploadReport() {
 }
 
 export function useAnalyzeReport() {
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (sessionId: string) => apiClient.analyzeReport(sessionId),
+    onSuccess: (_data, sessionId) => {
+      // Immediately invalidate the report cache so the UI picks up "processing" status
+      queryClient.invalidateQueries({ queryKey: ["report", sessionId] });
+      // Also invalidate insights/recovery since they'll be regenerated
+      queryClient.invalidateQueries({ queryKey: ["insights", sessionId] });
+      queryClient.invalidateQueries({ queryKey: ["recovery", sessionId] });
+    },
+  });
+}
+
+export function useDeleteReport() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (sessionId: string) => apiClient.deleteReport(sessionId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["patients"] });
+      queryClient.invalidateQueries({ queryKey: ["patient-history"] });
+    },
   });
 }
 
@@ -116,6 +142,28 @@ export function useDeletePatient() {
     mutationFn: (patientId: string) => apiClient.deletePatient(patientId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["patients"] });
+    },
+  });
+}
+
+// Admin — Risk Config
+export function useRiskConfig() {
+  const ready = useApiToken();
+  return useQuery({
+    queryKey: ["risk-config"],
+    queryFn: () => apiClient.getRiskConfig(),
+    enabled: ready,
+    staleTime: 60 * 1000,
+  });
+}
+
+export function useUpdateRiskConfig() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (update: import("@/lib/api-client").RiskConfigUpdate) =>
+      apiClient.updateRiskConfig(update),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["risk-config"] });
     },
   });
 }

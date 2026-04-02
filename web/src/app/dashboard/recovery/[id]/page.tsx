@@ -40,6 +40,13 @@ const PRIORITY_COLORS: Record<string, string> = {
   ongoing: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200",
 };
 
+const TIER_COLORS: Record<string, string> = {
+  critical: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200",
+  high: "bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200",
+  moderate: "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200",
+  low: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200",
+};
+
 export default function RecoveryPage() {
   const params = useParams();
   const sessionId = params.id as string;
@@ -128,7 +135,7 @@ export default function RecoveryPage() {
           <CardHeader>
             <CardTitle>Priority Conditions</CardTitle>
             <CardDescription>
-              Top conditions by risk score requiring attention
+              Top conditions ranked by risk score + knowledge graph connectivity
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -145,17 +152,29 @@ export default function RecoveryPage() {
                     <div>
                       <p className="font-medium text-sm">
                         {String(cond.condition_name)}
+                        {Number(cond.occurrence_count) > 1 && (
+                          <span className="text-xs text-gray-400 ml-1">
+                            ({String(cond.occurrence_count)} locations)
+                          </span>
+                        )}
                       </p>
                       <p className="text-xs text-gray-500">
-                        {String(cond.organ_system)} |{" "}
-                        {String(cond.anatomical_location || "N/A")}
+                        {String(cond.organ_system)}
+                        {cond.anatomical_location
+                          ? ` | ${String(cond.anatomical_location)}`
+                          : ""}
                       </p>
+                      {cond.reasoning ? (
+                        <p className="text-xs text-blue-600 dark:text-blue-400 mt-0.5">
+                          {String(cond.reasoning)}
+                        </p>
+                      ) : null}
                     </div>
                   </div>
                   <div className="text-right">
                     <Badge
                       className={
-                        PRIORITY_COLORS[String(cond.risk_tier)] || ""
+                        TIER_COLORS[String(cond.risk_tier)] || ""
                       }
                       variant="secondary"
                     >
@@ -164,6 +183,11 @@ export default function RecoveryPage() {
                     <p className="text-xs text-gray-500 mt-1">
                       Score: {String(cond.score)}
                     </p>
+                    {cond.kg_connected ? (
+                      <p className="text-[10px] text-purple-500 dark:text-purple-400">
+                        KG-enriched
+                      </p>
+                    ) : null}
                   </div>
                 </div>
               ))}
