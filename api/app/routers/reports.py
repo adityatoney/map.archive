@@ -355,9 +355,13 @@ async def delete_report(
         except OSError:
             logger.warning("Could not delete report file: %s", session.raw_report_url)
 
-    # Explicitly delete recovery plan (FK has NO ACTION, not CASCADE)
+    # Explicitly delete related records (FK has NO ACTION, not CASCADE)
     from sqlalchemy import delete as sa_delete
+    from app.models.clinical_analysis import ClinicalAnalysis
     from app.models.recovery import RecoveryPlan
+    await db.execute(
+        sa_delete(ClinicalAnalysis).where(ClinicalAnalysis.session_id == session.id)
+    )
     await db.execute(
         sa_delete(RecoveryPlan).where(RecoveryPlan.session_id == session.id)
     )

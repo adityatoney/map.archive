@@ -37,8 +37,16 @@ class Settings(BaseSettings):
 
     # External APIs
     UMLS_API_KEY: str = "mock"
-    ANTHROPIC_MODEL: str = "claude-sonnet-4-6-20250514"
+    # Claude model for LLM-powered analysis.
+    # Auth is handled by the claude-proxy (macOS Keychain) in dev,
+    # or ANTHROPIC_API_KEY in production.
+    ANTHROPIC_API_KEY: str = ""  # Only needed in production (no Keychain)
+    ANTHROPIC_MODEL: str = "claude-opus-4-6[1m]"
     KEGG_API_ENABLED: bool = True
+
+    # UMLS cache (Redis DB 1, separate from Celery broker on DB 0)
+    UMLS_CACHE_TTL: int = 2592000  # 30 days in seconds
+    REDIS_CACHE_DB: int = 1
 
     # File storage
     UPLOAD_DIR: str = "/app/uploads"

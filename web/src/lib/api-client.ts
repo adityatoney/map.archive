@@ -142,6 +142,49 @@ export interface RiskConfigUpdate {
   name?: string;
 }
 
+export interface RootSystem {
+  organ_system: string;
+  confidence: string;
+  reasoning: string;
+  downstream_effects: string[];
+}
+
+export interface CascadeChain {
+  chain: string[];
+  mechanism: string;
+  supporting_pathways: string[];
+  key_conditions: string[];
+}
+
+export interface KeyPattern {
+  pattern_name: string;
+  conditions_involved: string[];
+  shared_pathways: string[];
+  clinical_significance: string;
+  severity: string;
+}
+
+export interface ActionableInsight {
+  priority: number;
+  focus_area: string;
+  reasoning: string;
+  supported_by: string;
+}
+
+export interface ClinicalAnalysisData {
+  id: string;
+  session_id: string;
+  generated_at: string;
+  systemic_analysis: string | null;
+  root_systems: RootSystem[];
+  cascade_chains: CascadeChain[];
+  key_patterns: KeyPattern[];
+  actionable_insights: ActionableInsight[];
+  analysis_source: string;
+  model_used: string | null;
+  disclaimer: string;
+}
+
 export interface LoginResult {
   access_token: string;
   token_type: string;
@@ -283,6 +326,11 @@ class ApiClient {
   // Recovery
   async getRecoveryPlan(sessionId: string): Promise<RecoveryPlan> {
     return this.fetch(`/api/v1/recovery/${sessionId}`);
+  }
+
+  // Clinical Analysis
+  async getClinicalAnalysis(sessionId: string): Promise<ClinicalAnalysisData> {
+    return this.fetch(`/api/v1/clinical/${sessionId}`);
   }
 
   // Compare

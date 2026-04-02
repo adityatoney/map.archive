@@ -14,6 +14,7 @@ import {
   Filter,
   Heart,
   Loader2,
+  Microscope,
   RefreshCw,
   Search,
   Trash2,
@@ -818,6 +819,11 @@ export default function ReportPage() {
               <Button variant="outline" asChild>
                 <Link href={`/dashboard/insights/${sessionId}`}>
                   <Brain className="h-4 w-4 mr-2" /> Insights
+                </Link>
+              </Button>
+              <Button variant="outline" asChild>
+                <Link href={`/dashboard/clinical-analysis/${sessionId}`}>
+                  <Microscope className="h-4 w-4 mr-2" /> Clinical Analysis
                 </Link>
               </Button>
               <Button variant="outline" asChild>

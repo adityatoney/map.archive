@@ -8,6 +8,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base, TimestampMixin, UUIDMixin
 
 if TYPE_CHECKING:
+    from app.models.clinical_analysis import ClinicalAnalysis
     from app.models.session import ScanSession
     from app.models.trend import ConditionTrend
     from app.models.recovery import RecoveryPlan
@@ -38,5 +39,8 @@ class Patient(Base, UUIDMixin, TimestampMixin):
         back_populates="patient", cascade="all, delete-orphan"
     )
     recovery_plans: Mapped[list["RecoveryPlan"]] = relationship(
+        back_populates="patient", cascade="all, delete-orphan"
+    )
+    clinical_analyses: Mapped[list["ClinicalAnalysis"]] = relationship(
         back_populates="patient", cascade="all, delete-orphan"
     )

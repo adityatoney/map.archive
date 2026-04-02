@@ -2,7 +2,7 @@
 
 Pipeline: load entries → normalize (ICD-10/SNOMED/FMA) → embed →
 cluster → trend analysis → composite risk score → KG query →
-generate recovery plan → update DB.
+generate recovery plan → clinical analysis (LLM) → update DB.
 """
 
 import asyncio
@@ -28,9 +28,11 @@ def _get_async_session():
 
 async def _run_pipeline(session_id: str):
     """Async implementation of the analysis pipeline."""
+    from app.models.clinical_analysis import ClinicalAnalysis
     from app.models.recovery import RecoveryPlan
     from app.models.session import ScanSession
     from app.models.trend import ConditionTrend
+    from app.services.clinical_analyzer import ClinicalAnalyzerService
     from app.services.clusterer import ClustererService
     from app.services.embedder import EmbedderService
     from app.services.graph_client import GraphClient
@@ -78,6 +80,7 @@ async def _run_pipeline(session_id: str):
                     )
                     entry.anatomical_fma_id = fma_id
 
+            await normalizer.close()
             logger.info("Normalization complete for session %s", session_id)
 
             # Step 3: Generate embeddings
@@ -239,6 +242,7 @@ async def _run_pipeline(session_id: str):
             graph_interventions: list[dict] = []
             pathway_counts: dict[str, int] = {}
             graph_connectivity: dict = {}
+            systemic_patterns: list[dict] = []
 
             try:
                 graph_nutritional = await graph_client.find_interventions(
@@ -273,10 +277,10 @@ async def _run_pipeline(session_id: str):
 
                 # Precompute pathway counts per organ system for composite risk
                 try:
-                    systemic = await graph_client.find_systemic_patterns(
+                    systemic_patterns = await graph_client.find_systemic_patterns(
                         icd_list
                     )
-                    for sp in systemic:
+                    for sp in systemic_patterns:
                         for disease_name in [
                             sp["disease1"],
                             sp["disease2"],
@@ -352,6 +356,48 @@ async def _run_pipeline(session_id: str):
                 disclaimer=plan_data["disclaimer"],
             )
             db.add(recovery_plan)
+
+            # Step 6b: Clinical analysis (LLM-powered diagnostic reasoning)
+            clinical_analyzer = ClinicalAnalyzerService()
+            clinical_result = await clinical_analyzer.analyze(
+                entries=entry_dicts,
+                organ_risks=organ_risks,
+                graph_interventions=graph_interventions or None,
+                systemic_patterns=systemic_patterns or None,
+                graph_connectivity=graph_connectivity or None,
+                trends=trends,
+                priority_conditions=plan_data.get("priority_conditions"),
+            )
+
+            # Delete existing clinical analysis if re-analyzing
+            await db.execute(
+                delete(ClinicalAnalysis).where(
+                    ClinicalAnalysis.session_id == session.id
+                )
+            )
+
+            # Save clinical analysis
+            meta = clinical_result.pop("_meta", {})
+            clinical_analysis = ClinicalAnalysis(
+                session_id=session.id,
+                patient_id=session.patient_id,
+                systemic_analysis=clinical_result.get("systemic_analysis"),
+                root_systems=clinical_result.get("root_systems"),
+                cascade_chains=clinical_result.get("cascade_chains"),
+                key_patterns=clinical_result.get("key_patterns"),
+                actionable_insights=clinical_result.get("actionable_insights"),
+                analysis_source=meta.get("source", "template"),
+                model_used=meta.get("model"),
+                context_token_count=meta.get("input_tokens"),
+                disclaimer=clinical_result["disclaimer"],
+            )
+            db.add(clinical_analysis)
+
+            logger.info(
+                "Clinical analysis complete for session %s (source=%s)",
+                session_id,
+                meta.get("source", "template"),
+            )
 
             # Step 7: Update session status
             session.analysis_status = "completed"

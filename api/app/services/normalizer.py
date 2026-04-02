@@ -1,10 +1,12 @@
 """Condition normalizer — maps condition names to ICD-10, SNOMED CT, and FMA codes.
 
 In mock mode (UMLS_API_KEY=mock), uses a hardcoded lookup dictionary of common
-Med Bed conditions. In production, calls the UMLS REST API.
+Med Bed conditions. In production, calls the UMLS REST API with Redis caching
+to avoid redundant lookups (UMLS results are deterministic).
 """
 
 import hashlib
+import json
 import logging
 
 import httpx
@@ -214,13 +216,87 @@ MOCK_FMA_MAP: dict[str, str] = {
 }
 
 
+# ---------------------------------------------------------------------------
+# Redis cache helper
+# ---------------------------------------------------------------------------
+
+_CACHE_KEY_CONDITION = "umls:condition:{}"
+_CACHE_KEY_ANATOMY = "umls:anatomy:{}"
+# Sentinel value stored in Redis to represent a cached "no result" (avoids
+# re-querying UMLS for anatomy locations that have no FMA mapping).
+_CACHE_NULL = "__NULL__"
+
+
+def _build_redis_url(base_url: str, db: int) -> str:
+    """Swap the DB number in a redis:// URL.
+
+    ``base_url`` is typically ``redis://redis:6379/0`` (Celery broker).
+    We replace the trailing ``/0`` with ``/<db>`` for the cache DB.
+    """
+    # Strip trailing path component and replace with cache DB
+    parts = base_url.rsplit("/", 1)
+    return f"{parts[0]}/{db}"
+
+
 class NormalizerService:
-    """Maps condition names and anatomical locations to standard codes."""
+    """Maps condition names and anatomical locations to standard codes.
+
+    When not in mock mode, results from the UMLS REST API are cached in
+    Redis (DB 1 by default) with a configurable TTL (default 30 days).
+    Cache failures are silently ignored — the service falls through to
+    the UMLS API on any Redis error.
+    """
 
     def __init__(self):
         settings = get_settings()
         self.mock_mode = settings.UMLS_API_KEY == "mock"
         self.umls_api_key = settings.UMLS_API_KEY
+        self._cache_ttl = settings.UMLS_CACHE_TTL
+
+        # Lazy-init Redis connection (only created when needed)
+        self._redis = None
+        self._redis_url = _build_redis_url(
+            settings.REDIS_URL, settings.REDIS_CACHE_DB
+        )
+
+    async def _get_redis(self):
+        """Return (and lazily create) the async Redis client."""
+        if self._redis is None:
+            import redis.asyncio as aioredis
+
+            self._redis = aioredis.from_url(
+                self._redis_url,
+                decode_responses=True,
+                socket_connect_timeout=2,
+            )
+        return self._redis
+
+    async def close(self):
+        """Close the Redis connection pool (call after batch is done)."""
+        if self._redis is not None:
+            await self._redis.aclose()
+            self._redis = None
+
+    # ---- Cache helpers (never raise) ----
+
+    async def _cache_get(self, key: str) -> str | None:
+        """Get a value from Redis cache. Returns None on miss or error."""
+        try:
+            r = await self._get_redis()
+            return await r.get(key)
+        except Exception as e:
+            logger.debug("Redis cache GET failed for %s: %s", key, e)
+            return None
+
+    async def _cache_set(self, key: str, value: str) -> None:
+        """Set a value in Redis cache with TTL. Silently ignores errors."""
+        try:
+            r = await self._get_redis()
+            await r.set(key, value, ex=self._cache_ttl)
+        except Exception as e:
+            logger.debug("Redis cache SET failed for %s: %s", key, e)
+
+    # ---- Public API ----
 
     async def normalize_condition(self, condition_name: str) -> dict:
         """Map a condition name to ICD-10 and SNOMED codes.
@@ -242,6 +318,8 @@ class NormalizerService:
             return self._mock_normalize_anatomy(location)
         return await self._real_normalize_anatomy(location)
 
+    # ---- Mock (offline) implementations ----
+
     def _mock_normalize_condition(self, condition_name: str) -> dict:
         """Use hardcoded lookup dictionary."""
         name_upper = condition_name.upper().strip()
@@ -260,40 +338,130 @@ class NormalizerService:
         loc_upper = location.upper().strip()
         return MOCK_FMA_MAP.get(loc_upper)
 
+    # ---- Real UMLS API implementations (with Redis caching) ----
+
+    async def _umls_search(
+        self,
+        client: httpx.AsyncClient,
+        string: str,
+        sabs: str = "ICD10CM,SNOMEDCT_US",
+        search_type: str = "exact",
+    ) -> list[dict]:
+        """Execute a single UMLS REST search and return the results list."""
+        resp = await client.get(
+            "https://uts-ws.nlm.nih.gov/rest/search/current",
+            params={
+                "string": string,
+                "apiKey": self.umls_api_key,
+                "sabs": sabs,
+                "returnIdType": "code",
+                "searchType": search_type,
+            },
+        )
+        resp.raise_for_status()
+        return resp.json().get("result", {}).get("results", [])
+
+    @staticmethod
+    def _extract_codes(results: list[dict]) -> tuple[str | None, str | None]:
+        """Extract the first ICD-10 and SNOMED code from UMLS results."""
+        icd10 = None
+        snomed = None
+        for r in results:
+            root_source = r.get("rootSource", "")
+            if root_source == "ICD10CM" and not icd10:
+                icd10 = r.get("ui")
+            elif root_source == "SNOMEDCT_US" and not snomed:
+                snomed = r.get("ui")
+        return icd10, snomed
+
     async def _real_normalize_condition(self, condition_name: str) -> dict:
-        """Call the UMLS REST API for real normalization."""
+        """Call the UMLS REST API for real normalization.
+
+        Uses a multi-pass strategy to maximize ICD-10 hit rate:
+          1. Exact match against ICD10CM + SNOMEDCT_US
+          2. If ICD-10 still missing → "words" (fuzzy) search against ICD10CM only
+          3. If still missing → fall back to the hardcoded mock dictionary
+             (which contains curated mappings for common Med Bed conditions)
+
+        Results are cached in Redis. Mock-only fallback results from API
+        *errors* are NOT cached so the real API is retried next time.
+        """
+        name_upper = condition_name.upper().strip()
+        cache_key = _CACHE_KEY_CONDITION.format(name_upper)
+
+        # --- Check cache ---
+        cached = await self._cache_get(cache_key)
+        if cached is not None:
+            logger.debug("UMLS cache HIT (condition): %s", name_upper)
+            return json.loads(cached)
+
+        # --- Cache miss: call UMLS ---
+        logger.debug("UMLS cache MISS (condition): %s", name_upper)
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
-                # Search UMLS for the condition
-                resp = await client.get(
-                    "https://uts-ws.nlm.nih.gov/rest/search/current",
-                    params={
-                        "string": condition_name,
-                        "apiKey": self.umls_api_key,
-                        "sabs": "ICD10CM,SNOMEDCT_US",
-                        "returnIdType": "code",
-                    },
+                # Pass 1: exact match across both vocabularies
+                results = await self._umls_search(
+                    client, condition_name, sabs="ICD10CM,SNOMEDCT_US", search_type="exact"
                 )
-                resp.raise_for_status()
-                data = resp.json()
-                results = data.get("result", {}).get("results", [])
+                icd10, snomed = self._extract_codes(results)
 
-                icd10 = None
-                snomed = None
-                for r in results:
-                    root_source = r.get("rootSource", "")
-                    if root_source == "ICD10CM" and not icd10:
-                        icd10 = r.get("ui")
-                    elif root_source == "SNOMEDCT_US" and not snomed:
-                        snomed = r.get("ui")
+                # Pass 2: if ICD-10 missing, try a broader "words" search
+                # against ICD-10-CM only (handles spelling variants, partial matches)
+                if not icd10:
+                    results2 = await self._umls_search(
+                        client, condition_name, sabs="ICD10CM", search_type="words"
+                    )
+                    icd10_2, _ = self._extract_codes(results2)
+                    if icd10_2:
+                        icd10 = icd10_2
 
-                return {"icd10": icd10, "snomed": snomed}
+                # Pass 3: if still no ICD-10, check the curated mock dictionary
+                # (contains known-good mappings for Med Bed-specific terminology)
+                if not icd10:
+                    mock_icd10 = MOCK_ICD10_MAP.get(name_upper)
+                    if mock_icd10:
+                        icd10 = mock_icd10
+                        logger.debug(
+                            "ICD-10 from curated dictionary: %s → %s",
+                            name_upper, icd10,
+                        )
+
+                if not snomed:
+                    mock_snomed = MOCK_SNOMED_MAP.get(name_upper)
+                    if mock_snomed:
+                        snomed = mock_snomed
+
+                result = {"icd10": icd10, "snomed": snomed}
+
+                # Cache the API + dictionary merged result
+                await self._cache_set(cache_key, json.dumps(result))
+                return result
+
         except Exception as e:
-            logger.warning("UMLS API call failed for '%s': %s. Using mock.", condition_name, e)
+            logger.warning(
+                "UMLS API call failed for '%s': %s. Using mock.", condition_name, e
+            )
+            # Do NOT cache mock fallback — we want to retry UMLS next time
             return self._mock_normalize_condition(condition_name)
 
     async def _real_normalize_anatomy(self, location: str) -> str | None:
-        """Call UMLS for FMA mapping. Falls back to mock on failure."""
+        """Call UMLS for FMA mapping with Redis caching.
+
+        Caches both positive results (FMA IDs) and negative results (no mapping)
+        to avoid re-querying UMLS for locations that have no FMA entry.
+        Mock fallback results are NOT cached.
+        """
+        loc_upper = location.upper().strip()
+        cache_key = _CACHE_KEY_ANATOMY.format(loc_upper)
+
+        # --- Check cache ---
+        cached = await self._cache_get(cache_key)
+        if cached is not None:
+            logger.debug("UMLS cache HIT (anatomy): %s", loc_upper)
+            return None if cached == _CACHE_NULL else cached
+
+        # --- Cache miss: call UMLS ---
+        logger.debug("UMLS cache MISS (anatomy): %s", loc_upper)
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
                 resp = await client.get(
@@ -308,9 +476,19 @@ class NormalizerService:
                 resp.raise_for_status()
                 data = resp.json()
                 results = data.get("result", {}).get("results", [])
+
                 if results:
-                    return f"FMA:{results[0].get('ui', '')}"
+                    fma_id = f"FMA:{results[0].get('ui', '')}"
+                    await self._cache_set(cache_key, fma_id)
+                    return fma_id
+
+                # No FMA result — cache the "null" sentinel
+                await self._cache_set(cache_key, _CACHE_NULL)
                 return None
+
         except Exception as e:
-            logger.warning("UMLS FMA lookup failed for '%s': %s. Using mock.", location, e)
+            logger.warning(
+                "UMLS FMA lookup failed for '%s': %s. Using mock.", location, e
+            )
+            # Do NOT cache mock fallback
             return self._mock_normalize_anatomy(location)

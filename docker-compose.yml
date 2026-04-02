@@ -66,6 +66,10 @@ services:
         condition: service_healthy
     command: uvicorn app.main:create_app --factory --host 0.0.0.0 --port 8000 --reload
 
+  # NOTE: For LLM features, start the Claude proxy on the host first:
+  #   make claude-proxy
+  # The worker calls claude -p via the proxy (host.docker.internal:8019)
+  # since the CLI needs macOS Keychain for OAuth.
   celery-worker:
     build:
       context: ./api

@@ -1,8 +1,8 @@
 """Recovery plan generator — produces structured recovery recommendations.
 
 Uses knowledge graph interventions for evidence-based recommendations
-and Claude Agent SDK for LLM-powered plain-language summaries.
-Falls back to template-based output when LLM is unavailable.
+and Claude CLI (``claude -p``) for LLM-powered plain-language summaries.
+No template fallback — always uses LLM.
 """
 
 import asyncio
@@ -403,92 +403,48 @@ class RecoveryPlannerService:
         priority_conditions: list[dict],
         trends: list[dict] | None = None,
     ) -> str:
-        """Generate a plain-language summary.
+        """Generate a plain-language summary using Claude CLI (``claude -p``).
 
-        Tries LLM-powered summary via Claude Agent SDK first.
-        Falls back to template-based summary if LLM is unavailable.
+        Uses OAuth authentication (Claude Max subscription) via macOS Keychain.
+        No template fallback — always uses LLM.
         """
-        llm_summary = await self._generate_summary_llm(
+        from app.config import get_settings
+        from app.utils.claude_cli import claude_generate
+
+        settings = get_settings()
+
+        prompt = self._build_summary_prompt(
             entries, organ_risks, priority_conditions, trends
         )
-        if llm_summary:
-            return llm_summary
 
-        # Template fallback
-        return self._generate_summary_template(
-            entries, organ_risks, priority_conditions, trends
+        system_prompt = (
+            "You are a medical analytics summarizer for the MedBed Insight platform. "
+            "Produce a 2-3 paragraph plain-language summary of scan analysis results. "
+            "Be precise about the data — include specific counts and scores. "
+            "Never provide medical advice or diagnosis. "
+            "Always note that results are from frequency-based scan analysis and should "
+            "be discussed with a healthcare professional. Do not use markdown formatting. "
+            "Do not use bullet points. Write in flowing paragraphs."
         )
 
-    async def _generate_summary_llm(
-        self,
-        entries: list[dict],
-        organ_risks: list[dict],
-        priority_conditions: list[dict],
-        trends: list[dict] | None = None,
-    ) -> str | None:
-        """Generate LLM-powered summary using Claude Agent SDK.
+        logger.info("Generating recovery summary via Claude CLI (model=%s)", settings.ANTHROPIC_MODEL)
 
-        Uses the claude-agent-sdk Python package. Authentication flows through
-        the user's existing Claude Code OAuth login (Max subscription).
+        response = await claude_generate(
+            prompt=prompt,
+            system_prompt=system_prompt,
+            model=settings.ANTHROPIC_MODEL,
+            max_turns=1,
+            timeout=120,
+        )
 
-        Returns None on failure (triggers template fallback).
-        """
-        try:
-            from claude_agent_sdk import ClaudeAgentOptions, query
+        result_text = response["result"]
 
-            from app.config import get_settings
+        if result_text and len(result_text) > 50:
+            logger.info("LLM summary generated successfully (%d chars)", len(result_text))
+            return result_text
 
-            settings = get_settings()
-
-            prompt = self._build_summary_prompt(
-                entries, organ_risks, priority_conditions, trends
-            )
-
-            system_prompt = (
-                "You are a medical analytics summarizer for the MedBed Insight platform. "
-                "Produce a 2-3 paragraph plain-language summary of scan analysis results. "
-                "Be precise about the data — include specific counts and scores. "
-                "Never provide medical advice or diagnosis. "
-                "Always note that results are from frequency-based scan analysis and should "
-                "be discussed with a healthcare professional. Do not use markdown formatting. "
-                "Do not use bullet points. Write in flowing paragraphs."
-            )
-
-            options = ClaudeAgentOptions(
-                model=settings.ANTHROPIC_MODEL,
-                system_prompt=system_prompt,
-                allowed_tools=[],  # No tools needed — pure text generation
-                max_turns=1,
-            )
-
-            result_text = ""
-            async for message in query(prompt=prompt, options=options):
-                if hasattr(message, "result") and message.result:
-                    result_text = message.result
-                    break
-
-            if result_text and len(result_text) > 50:
-                logger.info(
-                    "LLM summary generated successfully (%d chars)",
-                    len(result_text),
-                )
-                return result_text
-
-            logger.warning("LLM returned empty or short summary, falling back to template")
-            return None
-
-        except ImportError:
-            logger.info(
-                "claude-agent-sdk not available; using template summary"
-            )
-            return None
-        except Exception as e:
-            logger.warning(
-                "Claude Agent SDK summary generation failed: %s. "
-                "Falling back to template.",
-                e,
-            )
-            return None
+        logger.error("Claude returned empty/short summary (%d chars)", len(result_text))
+        raise RuntimeError("Claude returned empty summary")
 
     def _build_summary_prompt(
         self,

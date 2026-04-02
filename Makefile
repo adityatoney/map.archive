@@ -1,4 +1,4 @@
-.PHONY: up down up-ml up-full logs ml-logs db-shell migrate migration seed seed-kg enrich-snomed test-api test-web lint clean warm-model ml-health
+.PHONY: up down up-ml up-full logs ml-logs db-shell migrate migration seed seed-kg enrich-snomed test-api test-web lint clean warm-model ml-health worker claude-proxy
 
 up:
 	docker compose up -d
@@ -63,3 +63,9 @@ warm-model:
 
 ml-health:
 	@curl -s http://localhost:8001/health | python3 -m json.tool
+
+# Run Claude proxy on the HOST so Docker workers can use claude -p via macOS Keychain OAuth.
+# No pip dependencies needed — uses stdlib only (Python 3.9+).
+claude-proxy:
+	@echo "Starting Claude CLI proxy on port 8019..."
+	python3 scripts/claude-proxy.py --port 8019

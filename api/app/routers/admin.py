@@ -2,11 +2,13 @@
 
 import logging
 
+import redis.asyncio as aioredis
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import get_settings
 from app.models.base import get_db
 from app.models.risk_config import DEFAULT_TIER_THRESHOLDS, RiskConfig
 from app.utils.auth import get_current_user
@@ -145,3 +147,86 @@ async def update_risk_config(
         name=config.name,
         is_active=config.is_active,
     )
+
+
+# ---------------------------------------------------------------------------
+# UMLS cache management
+# ---------------------------------------------------------------------------
+
+
+def _get_cache_redis_url() -> str:
+    """Build the Redis URL for the UMLS cache DB."""
+    settings = get_settings()
+    parts = settings.REDIS_URL.rsplit("/", 1)
+    return f"{parts[0]}/{settings.REDIS_CACHE_DB}"
+
+
+class CacheStatsOut(BaseModel):
+    """UMLS cache statistics response."""
+
+    condition_keys: int
+    anatomy_keys: int
+    total_keys: int
+
+
+@router.get("/cache/umls", response_model=CacheStatsOut)
+async def get_umls_cache_stats(
+    _user=Depends(get_current_user),
+):
+    """Get UMLS cache statistics (key counts by type)."""
+    r = aioredis.from_url(
+        _get_cache_redis_url(), decode_responses=True, socket_connect_timeout=2
+    )
+    try:
+        condition_keys = []
+        async for key in r.scan_iter("umls:condition:*", count=1000):
+            condition_keys.append(key)
+
+        anatomy_keys = []
+        async for key in r.scan_iter("umls:anatomy:*", count=1000):
+            anatomy_keys.append(key)
+
+        return CacheStatsOut(
+            condition_keys=len(condition_keys),
+            anatomy_keys=len(anatomy_keys),
+            total_keys=len(condition_keys) + len(anatomy_keys),
+        )
+    finally:
+        await r.aclose()
+
+
+class CacheFlushOut(BaseModel):
+    """UMLS cache flush response."""
+
+    deleted: int
+    message: str
+
+
+@router.post("/cache/umls/flush", response_model=CacheFlushOut)
+async def flush_umls_cache(
+    _user=Depends(get_current_user),
+):
+    """Flush all cached UMLS lookups from Redis.
+
+    This forces the next analysis pipeline run to re-query the UMLS API
+    for all conditions and anatomy locations.
+    """
+    r = aioredis.from_url(
+        _get_cache_redis_url(), decode_responses=True, socket_connect_timeout=2
+    )
+    try:
+        keys = []
+        async for key in r.scan_iter("umls:*", count=1000):
+            keys.append(key)
+
+        deleted = 0
+        if keys:
+            deleted = await r.delete(*keys)
+
+        logger.info("UMLS cache flushed: %d keys deleted", deleted)
+        return CacheFlushOut(
+            deleted=deleted,
+            message=f"Flushed {deleted} cached UMLS lookups",
+        )
+    finally:
+        await r.aclose()

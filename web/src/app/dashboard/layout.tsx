@@ -13,6 +13,7 @@ import {
   TrendingUp,
   Brain,
   Heart,
+  Microscope,
   GitCompare,
   LogOut,
   Sun,
@@ -53,6 +54,7 @@ const NAV_ITEMS = [
 const DYNAMIC_NAV_ITEMS = [
   { href: "/dashboard/trends", label: "Trends", icon: TrendingUp },
   { href: "/dashboard/insights", label: "Insights", icon: Brain },
+  { href: "/dashboard/clinical-analysis", label: "Clinical Analysis", icon: Microscope },
   { href: "/dashboard/recovery", label: "Recovery Plan", icon: Heart },
 ];
 

@@ -48,8 +48,8 @@ scikit-learn>=1.3
 umap-learn
 ruptures
 
-# LLM summaries (Claude Agent SDK)
-claude-agent-sdk
+# LLM — Anthropic SDK with OAuth (Claude Max subscription)
+anthropic>=0.40.0
 
 # Testing
 pytest

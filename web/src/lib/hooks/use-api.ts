@@ -93,6 +93,16 @@ export function useRecoveryPlan(sessionId: string | null) {
   });
 }
 
+export function useClinicalAnalysis(sessionId: string | null) {
+  const ready = useApiToken();
+  return useQuery({
+    queryKey: ["clinical-analysis", sessionId],
+    queryFn: () => apiClient.getClinicalAnalysis(sessionId!),
+    enabled: ready && !!sessionId,
+    retry: false,
+  });
+}
+
 export function useUploadReport() {
   return useMutation({
     mutationFn: (file: File) => apiClient.uploadReport(file),
@@ -106,9 +116,10 @@ export function useAnalyzeReport() {
     onSuccess: (_data, sessionId) => {
       // Immediately invalidate the report cache so the UI picks up "processing" status
       queryClient.invalidateQueries({ queryKey: ["report", sessionId] });
-      // Also invalidate insights/recovery since they'll be regenerated
+      // Also invalidate insights/recovery/clinical since they'll be regenerated
       queryClient.invalidateQueries({ queryKey: ["insights", sessionId] });
       queryClient.invalidateQueries({ queryKey: ["recovery", sessionId] });
+      queryClient.invalidateQueries({ queryKey: ["clinical-analysis", sessionId] });
     },
   });
 }

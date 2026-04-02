@@ -11,6 +11,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base, TimestampMixin, UUIDMixin
 
 if TYPE_CHECKING:
+    from app.models.clinical_analysis import ClinicalAnalysis
     from app.models.entry import ScanEntry
     from app.models.patient import Patient
     from app.models.recovery import RecoveryPlan
@@ -59,5 +60,8 @@ class ScanSession(Base, UUIDMixin, TimestampMixin):
         back_populates="session", cascade="all, delete-orphan"
     )
     recovery_plan: Mapped["RecoveryPlan | None"] = relationship(
+        back_populates="session", uselist=False
+    )
+    clinical_analysis: Mapped["ClinicalAnalysis | None"] = relationship(
         back_populates="session", uselist=False
     )

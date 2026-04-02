@@ -8,6 +8,7 @@ from app.models.entry import ScanEntry
 from app.models.trend import ConditionTrend
 from app.models.recovery import RecoveryPlan
 from app.models.risk_config import RiskConfig
+from app.models.clinical_analysis import ClinicalAnalysis
 
 __all__ = [
     "Base",
@@ -18,4 +19,5 @@ __all__ = [
     "ConditionTrend",
     "RecoveryPlan",
     "RiskConfig",
+    "ClinicalAnalysis",
 ]
