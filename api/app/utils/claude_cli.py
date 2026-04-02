@@ -1,14 +1,17 @@
-"""Claude LLM helper — calls ``claude -p`` via the host proxy.
+"""Claude CLI helper — runs ``claude -p`` in headless mode.
 
-In Docker, the CLI can't access macOS Keychain for OAuth. Instead, a lightweight
-HTTP proxy runs on the host (``scripts/claude-proxy.py``) that wraps ``claude -p``.
-The celery worker calls this proxy via ``host.docker.internal``.
+Uses the Claude Code CLI (``claude -p``) for non-interactive LLM generation.
 
-If running outside Docker (e.g. local dev), falls back to calling ``claude -p``
-directly as a subprocess.
+Authentication:
+  - In Docker: via CLAUDE_CODE_OAUTH_TOKEN env var (Claude Max subscription)
+  - On host:   via macOS Keychain (claude.ai login)
 
-Start the proxy:  ``python3 scripts/claude-proxy.py``
-Start Docker:     ``docker compose up -d``
+Example CLI usage:
+    claude -p "<question>" \\
+      --append-system-prompt-file prompt.txt \\
+      --output-format json \\
+      --model sonnet \\
+      --max-turns 1
 """
 
 import asyncio
@@ -18,21 +21,20 @@ import os
 import tempfile
 from typing import Any
 
-import httpx
-
 from app.config import get_settings
 
 logger = logging.getLogger(__name__)
 
-# Proxy URL — the host-side claude-proxy.py service
-CLAUDE_PROXY_URL = os.environ.get(
-    "CLAUDE_PROXY_URL", "http://host.docker.internal:8019"
-)
-
-
-def _is_docker() -> bool:
-    """Detect if running inside Docker."""
-    return os.path.exists("/.dockerenv") or os.environ.get("DOCKER_CONTAINER") == "1"
+# One-time setup: ensure .claude.json exists with onboarding flag
+# (required for headless mode in Docker)
+_CLAUDE_JSON_PATH = os.path.expanduser("~/.claude.json")
+if not os.path.exists(_CLAUDE_JSON_PATH):
+    try:
+        os.makedirs(os.path.dirname(_CLAUDE_JSON_PATH), exist_ok=True)
+        with open(_CLAUDE_JSON_PATH, "w") as f:
+            json.dump({"hasCompletedOnboarding": True}, f)
+    except OSError:
+        pass
 
 
 async def claude_generate(
@@ -42,103 +44,28 @@ async def claude_generate(
     max_turns: int = 1,
     timeout: int = 120,
 ) -> dict[str, Any]:
-    """Generate text using Claude.
-
-    In Docker: calls the host-side claude-proxy HTTP service.
-    On host:   calls ``claude -p`` directly as a subprocess.
+    """Run ``claude -p`` and return the parsed JSON result.
 
     Args:
         prompt: The user prompt to send.
-        system_prompt: Optional system prompt.
+        system_prompt: Optional system prompt (written to temp file).
         model: Model alias (e.g. "sonnet") or full name. Defaults to config.
         max_turns: Max agentic turns (1 = single response, no tools).
-        timeout: Timeout in seconds.
+        timeout: Subprocess timeout in seconds.
 
     Returns:
         dict with keys:
           - result: str — the text response from Claude
-          - session_id: str — CLI session ID (empty if proxy)
-          - raw: dict — full parsed JSON from CLI
+          - session_id: str — CLI session ID
+          - raw: dict — full parsed JSON from --output-format json
 
     Raises:
-        RuntimeError: If the call fails.
+        RuntimeError: If the CLI process fails or times out.
     """
-    if _is_docker():
-        return await _generate_via_proxy(prompt, system_prompt, model, max_turns, timeout)
-    else:
-        return await _generate_via_cli(prompt, system_prompt, model, max_turns, timeout)
-
-
-async def _generate_via_proxy(
-    prompt: str,
-    system_prompt: str | None,
-    model: str | None,
-    max_turns: int,
-    timeout: int,
-) -> dict[str, Any]:
-    """Call the host-side Claude proxy HTTP service."""
     settings = get_settings()
     model = model or settings.ANTHROPIC_MODEL
 
-    url = f"{CLAUDE_PROXY_URL}/generate"
-
-    payload = {
-        "prompt": prompt,
-        "system_prompt": system_prompt,
-        "model": model,
-        "max_turns": max_turns,
-        "timeout": timeout,
-    }
-
-    logger.info(
-        "Calling Claude proxy at %s (model=%s, prompt_len=%d)",
-        url, model, len(prompt),
-    )
-
-    async with httpx.AsyncClient(timeout=httpx.Timeout(float(timeout) + 10)) as client:
-        try:
-            response = await client.post(url, json=payload)
-        except httpx.ConnectError as e:
-            logger.error(
-                "Cannot connect to Claude proxy at %s. "
-                "Is scripts/claude-proxy.py running on the host? Error: %s",
-                url, str(e)[:200],
-            )
-            raise RuntimeError(
-                f"Cannot connect to Claude proxy at {url}. "
-                "Start it with: python3 scripts/claude-proxy.py"
-            ) from e
-        except httpx.TimeoutException as e:
-            raise RuntimeError(f"Claude proxy timed out after {timeout}s") from e
-
-    if response.status_code != 200:
-        error_data = response.json() if response.headers.get("content-type", "").startswith("application/json") else {}
-        error_msg = error_data.get("error", response.text[:200])
-        logger.error("Claude proxy returned %d: %s", response.status_code, error_msg)
-        raise RuntimeError(f"Claude proxy error ({response.status_code}): {error_msg}")
-
-    data = response.json()
-    result_text = data.get("result", "")
-
-    logger.info(
-        "Claude proxy response: %d chars, session=%s",
-        len(result_text), data.get("session_id", ""),
-    )
-
-    return data
-
-
-async def _generate_via_cli(
-    prompt: str,
-    system_prompt: str | None,
-    model: str | None,
-    max_turns: int,
-    timeout: int,
-) -> dict[str, Any]:
-    """Call ``claude -p`` directly as a subprocess (host mode)."""
-    settings = get_settings()
-    model = model or settings.ANTHROPIC_MODEL
-
+    # Build the CLI command
     cmd = [
         "claude",
         "-p", prompt,
@@ -147,6 +74,7 @@ async def _generate_via_cli(
         "--max-turns", str(max_turns),
     ]
 
+    # System prompt via a temp file (avoids shell quoting issues)
     sys_prompt_file = None
     if system_prompt:
         sys_prompt_file = tempfile.NamedTemporaryFile(
@@ -158,7 +86,9 @@ async def _generate_via_cli(
 
     logger.info(
         "Calling Claude CLI (model=%s, prompt_len=%d, system_prompt=%s)",
-        model, len(prompt), bool(system_prompt),
+        model,
+        len(prompt),
+        bool(system_prompt),
     )
 
     env = {**os.environ, "NO_COLOR": "1"}
@@ -178,7 +108,9 @@ async def _generate_via_cli(
         except asyncio.TimeoutError:
             process.kill()
             await process.communicate()
-            raise RuntimeError(f"Claude CLI timed out after {timeout}s")
+            raise RuntimeError(
+                f"Claude CLI timed out after {timeout}s"
+            )
 
         stdout_text = stdout.decode("utf-8", errors="replace").strip()
         stderr_text = stderr.decode("utf-8", errors="replace").strip()
@@ -186,7 +118,9 @@ async def _generate_via_cli(
         if process.returncode != 0:
             logger.error(
                 "Claude CLI failed (exit=%d)\nstderr: %s\nstdout: %s",
-                process.returncode, stderr_text[:500], stdout_text[:500],
+                process.returncode,
+                stderr_text[:500],
+                stdout_text[:500],
             )
             raise RuntimeError(
                 f"Claude CLI exited with code {process.returncode}: "
@@ -197,6 +131,8 @@ async def _generate_via_cli(
         try:
             parsed = json.loads(stdout_text)
         except json.JSONDecodeError:
+            # Sometimes the output has extra lines before the JSON
+            # Try to find the JSON object in the output
             for line in stdout_text.split("\n"):
                 line = line.strip()
                 if line.startswith("{"):
@@ -206,13 +142,21 @@ async def _generate_via_cli(
                     except json.JSONDecodeError:
                         continue
             else:
-                logger.error("Claude CLI returned non-JSON: %s", stdout_text[:500])
-                raise RuntimeError(f"Claude CLI returned non-JSON: {stdout_text[:200]}")
+                logger.error(
+                    "Claude CLI returned non-JSON output: %s", stdout_text[:500]
+                )
+                raise RuntimeError(
+                    f"Claude CLI returned non-JSON: {stdout_text[:200]}"
+                )
 
         result_text = parsed.get("result", "")
         session_id = parsed.get("session_id", "")
 
-        logger.info("Claude CLI response: %d chars, session=%s", len(result_text), session_id)
+        logger.info(
+            "Claude CLI response: %d chars, session=%s",
+            len(result_text),
+            session_id,
+        )
 
         return {
             "result": result_text,
@@ -221,6 +165,7 @@ async def _generate_via_cli(
         }
 
     finally:
+        # Clean up temp file
         if sys_prompt_file:
             try:
                 os.unlink(sys_prompt_file.name)

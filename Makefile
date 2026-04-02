@@ -1,4 +1,4 @@
-.PHONY: up down up-ml up-full logs ml-logs db-shell migrate migration seed seed-kg enrich-snomed test-api test-web lint clean warm-model ml-health worker claude-proxy
+.PHONY: up down up-ml up-full logs ml-logs db-shell migrate migration seed seed-kg enrich-snomed test-api test-web lint clean warm-model ml-health refresh-token
 
 up:
 	docker compose up -d
@@ -64,8 +64,10 @@ warm-model:
 ml-health:
 	@curl -s http://localhost:8001/health | python3 -m json.tool
 
-# Run Claude proxy on the HOST so Docker workers can use claude -p via macOS Keychain OAuth.
-# No pip dependencies needed — uses stdlib only (Python 3.9+).
-claude-proxy:
-	@echo "Starting Claude CLI proxy on port 8019..."
-	python3 scripts/claude-proxy.py --port 8019
+# Refresh the CLAUDE_CODE_OAUTH_TOKEN in .env from macOS Keychain.
+# Run this if claude -p fails with auth errors in Docker.
+refresh-token:
+	@TOKEN=$$(security find-generic-password -s "Claude Code-credentials" -w | python3 -c "import json,sys; print(json.loads(sys.stdin.read().strip())['claudeAiOauth']['accessToken'])") && \
+	sed -i '' "s|^CLAUDE_CODE_OAUTH_TOKEN=.*|CLAUDE_CODE_OAUTH_TOKEN=$$TOKEN|" .env && \
+	echo "Updated CLAUDE_CODE_OAUTH_TOKEN in .env" && \
+	echo "Run 'docker compose up -d celery-worker --force-recreate' to apply"
