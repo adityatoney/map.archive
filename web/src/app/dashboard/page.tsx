@@ -22,8 +22,9 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { usePatientStore } from "@/lib/stores/patient-store";
-import { usePatientHistory } from "@/lib/hooks/use-api";
+import { usePatientHistory, useInsights } from "@/lib/hooks/use-api";
 import apiClient from "@/lib/api-client";
+import { BodyMap } from "@/components/charts/body-map";
 
 function MetricCard({
   title,
@@ -82,6 +83,10 @@ function RiskTierBadge({ tier }: { tier: string }) {
 export default function DashboardPage() {
   const { selectedPatientId, patients, setLatestSessionId } = usePatientStore();
   const { data: history, isLoading } = usePatientHistory(selectedPatientId);
+  const latestAnalyzedSessionId = history?.sessions.find(
+    (s) => s.analysis_status === "completed"
+  )?.id || null;
+  const { data: insightsForMap } = useInsights(latestAnalyzedSessionId);
 
   const selectedPatient = patients.find((p) => p.id === selectedPatientId);
 
@@ -178,19 +183,37 @@ export default function DashboardPage() {
 
       {/* Body map placeholder + recent sessions */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Body map placeholder */}
+        {/* Body map with organ risk overlay */}
         <Card>
           <CardHeader>
             <CardTitle>Organ System Risk Map</CardTitle>
             <CardDescription>
-              Body silhouette with risk overlays (coming in Phase 5)
+              Body silhouette with risk overlays — hover for details
             </CardDescription>
           </CardHeader>
-          <CardContent className="flex items-center justify-center h-64 bg-gray-50 dark:bg-gray-800/50 rounded-md">
-            <div className="text-center text-gray-400">
-              <Activity className="h-16 w-16 mx-auto mb-2 opacity-30" />
-              <p className="text-sm">Interactive body map coming soon</p>
-            </div>
+          <CardContent>
+            {insightsForMap?.risk_summary &&
+            Object.keys(insightsForMap.risk_summary).length > 0 ? (
+              <BodyMap
+                riskSummary={insightsForMap.risk_summary}
+                onOrganClick={() => {
+                  if (latestAnalyzedSessionId) {
+                    window.location.href = `/dashboard/insights/${latestAnalyzedSessionId}`;
+                  }
+                }}
+              />
+            ) : (
+              <div className="flex items-center justify-center h-64 bg-gray-50 dark:bg-gray-800/50 rounded-md">
+                <div className="text-center text-gray-400">
+                  <Activity className="h-16 w-16 mx-auto mb-2 opacity-30" />
+                  <p className="text-sm">
+                    {latestAnalyzedSessionId
+                      ? "Loading risk data..."
+                      : "Analyze a scan to see organ risk map"}
+                  </p>
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
 

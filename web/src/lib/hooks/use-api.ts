@@ -157,6 +157,26 @@ export function useDeletePatient() {
   });
 }
 
+// Trends
+export function usePatientTrends(patientId: string | null) {
+  const ready = useApiToken();
+  return useQuery({
+    queryKey: ["patient-trends", patientId],
+    queryFn: () => apiClient.getPatientTrends(patientId!),
+    enabled: ready && !!patientId,
+  });
+}
+
+// Knowledge Graph
+export function useGraphContext(icdCodes: string[], conditionNames?: string[]) {
+  const ready = useApiToken();
+  return useQuery({
+    queryKey: ["graph-context", icdCodes],
+    queryFn: () => apiClient.getGraphContext(icdCodes, conditionNames),
+    enabled: ready && icdCodes.length > 0,
+  });
+}
+
 // Admin — Risk Config
 export function useRiskConfig() {
   const ready = useApiToken();

@@ -62,6 +62,25 @@ class GraphClient:
             logger.warning("Neo4j query failed (shared_pathways): %s", e)
             return []
 
+    async def get_disease_names(self, icd_list: list[str]) -> dict[str, str]:
+        """Resolve ICD-10 codes to human-readable disease names."""
+        driver = self._get_driver()
+        if not driver:
+            return {}
+
+        try:
+            query = """
+            MATCH (d:Disease)
+            WHERE d.icd10 IN $icd_list
+            RETURN d.icd10 AS icd10, d.name AS name
+            """
+            with driver.session() as session:
+                result = session.run(query, icd_list=icd_list)
+                return {rec["icd10"]: rec["name"] for rec in result if rec["name"]}
+        except Exception as e:
+            logger.warning("Neo4j query failed (disease_names): %s", e)
+            return {}
+
     async def get_condition_context(self, icd: str) -> list[dict[str, Any]]:
         """Get the full context for a condition (all relationships)."""
         driver = self._get_driver()

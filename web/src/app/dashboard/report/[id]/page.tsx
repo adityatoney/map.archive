@@ -47,9 +47,11 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 import { Progress } from "@/components/ui/progress";
-import { useReport, useAnalyzeReport, useDeleteReport } from "@/lib/hooks/use-api";
+import { useReport, useAnalyzeReport, useDeleteReport, useInsights } from "@/lib/hooks/use-api";
 import type { ScanEntry } from "@/lib/api-client";
+import { ClusterScatter } from "@/components/charts/cluster-scatter";
 
 // --------------- Constants ---------------
 
@@ -555,6 +557,9 @@ export default function ReportPage() {
   } = useReport(sessionId, { poll: true });
   const analyze = useAnalyzeReport();
   const deleteReport = useDeleteReport();
+  const { data: insightsData } = useInsights(
+    report?.analysis_status === "completed" ? sessionId : null
+  );
   const router = useRouter();
   const [confirmDelete, setConfirmDelete] = useState(false);
 
@@ -1138,18 +1143,24 @@ export default function ReportPage() {
             <CardHeader>
               <CardTitle>Cluster Visualization</CardTitle>
               <CardDescription>
-                UMAP 2D scatter plot of condition embeddings (requires analysis)
+                UMAP 2D scatter plot of condition embeddings colored by cluster
               </CardDescription>
             </CardHeader>
-            <CardContent className="flex items-center justify-center h-64 bg-gray-50 dark:bg-gray-800/50 rounded-md">
-              <div className="text-center text-gray-400">
-                <Brain className="h-12 w-12 mx-auto mb-2 opacity-30" />
-                <p className="text-sm">
-                  {report.analysis_status === "completed"
-                    ? "D3.js cluster visualization coming in Phase 5"
-                    : "Run analysis to generate clusters"}
-                </p>
-              </div>
+            <CardContent>
+              {insightsData?.scatter_data && insightsData.scatter_data.length > 0 ? (
+                <ClusterScatter data={insightsData.scatter_data} height={400} />
+              ) : (
+                <div className="flex items-center justify-center h-64 bg-gray-50 dark:bg-gray-800/50 rounded-md">
+                  <div className="text-center text-gray-400">
+                    <Brain className="h-12 w-12 mx-auto mb-2 opacity-30" />
+                    <p className="text-sm">
+                      {report.analysis_status === "completed"
+                        ? "No cluster data available for this session"
+                        : "Run analysis to generate clusters"}
+                    </p>
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>

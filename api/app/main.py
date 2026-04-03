@@ -40,7 +40,7 @@ def create_app() -> FastAPI:
     )
 
     # Include routers
-    from app.routers import admin, auth, clinical, reports, patients, insights, recovery, compare
+    from app.routers import admin, auth, clinical, reports, patients, insights, recovery, compare, graph
 
     app.include_router(auth.router, prefix="/api/v1/auth", tags=["auth"])
     app.include_router(reports.router, prefix="/api/v1/reports", tags=["reports"])
@@ -50,6 +50,7 @@ def create_app() -> FastAPI:
     app.include_router(compare.router, prefix="/api/v1/reports", tags=["compare"])
     app.include_router(clinical.router, prefix="/api/v1/clinical", tags=["clinical"])
     app.include_router(admin.router, prefix="/api/v1/admin", tags=["admin"])
+    app.include_router(graph.router, prefix="/api/v1/graph", tags=["graph"])
 
     @app.get("/health")
     async def health_check():

@@ -52,7 +52,7 @@ const NAV_ITEMS = [
 ];
 
 const DYNAMIC_NAV_ITEMS = [
-  { href: "/dashboard/trends", label: "Trends", icon: TrendingUp },
+  { href: "/dashboard/trends", label: "Trends", icon: TrendingUp, usePatientId: true },
   { href: "/dashboard/insights", label: "Insights", icon: Brain },
   { href: "/dashboard/clinical-analysis", label: "Clinical Analysis", icon: Microscope },
   { href: "/dashboard/recovery", label: "Recovery Plan", icon: Heart },
@@ -94,12 +94,13 @@ function SidebarNav() {
       {DYNAMIC_NAV_ITEMS.map((item) => {
         const Icon = item.icon;
         const disabled = !selectedPatientId;
-        // Build session-specific href for analysis pages
-        const href = latestSessionId
-          ? `${item.href}/${latestSessionId}`
+        // Trends uses patient_id; other analysis pages use session_id
+        const idForRoute = item.usePatientId ? selectedPatientId : latestSessionId;
+        const href = idForRoute
+          ? `${item.href}/${idForRoute}`
           : item.href;
 
-        if (disabled || !latestSessionId) {
+        if (disabled || !idForRoute) {
           return (
             <span
               key={item.href}
@@ -137,7 +138,7 @@ function SidebarNav() {
 function PatientSelector() {
   const { selectedPatientId, setSelectedPatientId, setPatients } =
     usePatientStore();
-  const { data: patients, refetch } = usePatients();
+  const { data: patients } = usePatients();
   const deletePatient = useDeletePatient();
   const [confirmDelete, setConfirmDelete] = useState(false);
 

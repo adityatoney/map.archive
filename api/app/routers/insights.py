@@ -36,6 +36,16 @@ class PatternCard(BaseModel):
     description: str
 
 
+class ScatterPoint(BaseModel):
+    condition_name: str
+    x: float
+    y: float
+    cluster_id: int
+    score: float
+    organ_system: str | None = None
+    risk_tier: str | None = None
+
+
 class InsightsResponse(BaseModel):
     session_id: str
     analysis_status: str
@@ -43,6 +53,9 @@ class InsightsResponse(BaseModel):
     patterns: list[PatternCard]
     risk_summary: dict
     umap_coords: list[list[float]] | None = None
+    scatter_data: list[ScatterPoint] | None = None
+    icd_codes: list[str] | None = None
+    condition_names_for_icd: list[str] | None = None
     embedding_source: str | None = None
     disclaimer: str
 
@@ -193,8 +206,33 @@ async def get_insights(
 
     # Extract UMAP coords from cluster metadata if available
     umap_coords = None
+    scatter_data = None
     if session.cluster_metadata and "umap_coords" in session.cluster_metadata:
         umap_coords = session.cluster_metadata["umap_coords"]
+
+        # Build scatter_data by zipping entries with UMAP coordinates
+        if len(umap_coords) == len(entries):
+            scatter_data = []
+            for entry, coords in zip(entries, umap_coords):
+                scatter_data.append(
+                    ScatterPoint(
+                        condition_name=entry.condition_name,
+                        x=round(coords[0], 4),
+                        y=round(coords[1], 4),
+                        cluster_id=entry.cluster_id if entry.cluster_id is not None else -1,
+                        score=round(entry.score, 3),
+                        organ_system=entry.organ_system,
+                        risk_tier=entry.risk_tier,
+                    )
+                )
+
+    # Collect unique ICD-10 codes + condition names for KG explorer
+    icd_name_pairs: dict[str, str] = {}
+    for e in entries:
+        if e.condition_icd10 and e.condition_icd10 not in icd_name_pairs:
+            icd_name_pairs[e.condition_icd10] = e.condition_name
+    icd_codes = sorted(icd_name_pairs.keys())
+    condition_names_for_icd = [icd_name_pairs[icd] for icd in icd_codes]
 
     return InsightsResponse(
         session_id=session_id,
@@ -203,6 +241,9 @@ async def get_insights(
         patterns=patterns,
         risk_summary=risk_summary,
         umap_coords=umap_coords,
+        scatter_data=scatter_data,
+        icd_codes=icd_codes or None,
+        condition_names_for_icd=condition_names_for_icd or None,
         embedding_source=session.embedding_source,
         disclaimer=DISCLAIMER,
     )

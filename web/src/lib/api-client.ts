@@ -84,6 +84,9 @@ export interface InsightsData {
     risk_tier: string;
   }>;
   umap_coords?: number[][] | null;
+  scatter_data?: ScatterPoint[] | null;
+  icd_codes?: string[] | null;
+  condition_names_for_icd?: string[] | null;
   embedding_source?: string | null;
   disclaimer: string;
 }
@@ -183,6 +186,55 @@ export interface ClinicalAnalysisData {
   analysis_source: string;
   model_used: string | null;
   disclaimer: string;
+}
+
+// Trends
+export interface TrendItem {
+  condition_name: string;
+  condition_icd10?: string | null;
+  organ_system?: string | null;
+  trend_direction: "improving" | "worsening" | "stable" | "volatile";
+  trend_slope: number;
+  sessions_analyzed: number;
+  first_score: number;
+  last_score: number;
+  change_points?: { session_index: number; score: number; date?: string }[] | null;
+}
+
+export interface PatientTrendsData {
+  patient_id: string;
+  trends: TrendItem[];
+  total_trends: number;
+  summary: { improving: number; worsening: number; stable: number; volatile: number };
+}
+
+// Scatter plot (UMAP visualization)
+export interface ScatterPoint {
+  condition_name: string;
+  x: number;
+  y: number;
+  cluster_id: number;
+  score: number;
+  organ_system?: string | null;
+  risk_tier?: string | null;
+}
+
+// Knowledge Graph
+export interface GraphNode {
+  id: string;
+  label: string;
+  type: "disease" | "pathway" | "intervention" | "lifestyle";
+}
+
+export interface GraphEdge {
+  source: string;
+  target: string;
+  relationship: string;
+}
+
+export interface GraphContextData {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
 }
 
 export interface LoginResult {
@@ -345,6 +397,24 @@ class ApiClient {
         session_id_2: sessionId2,
       }),
     });
+  }
+
+  // Trends
+  async getPatientTrends(patientId: string): Promise<PatientTrendsData> {
+    return this.fetch(`/api/v1/patients/${patientId}/trends`);
+  }
+
+  // Knowledge Graph
+  async getGraphContext(
+    icdCodes: string[],
+    conditionNames?: string[]
+  ): Promise<GraphContextData> {
+    const params = new URLSearchParams();
+    icdCodes.forEach((c) => params.append("icd_codes", c));
+    if (conditionNames) {
+      conditionNames.forEach((n) => params.append("condition_names", n));
+    }
+    return this.fetch(`/api/v1/graph/context?${params.toString()}`);
   }
 
   // Admin — Risk Config
