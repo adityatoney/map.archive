@@ -8,9 +8,9 @@ services:
       POSTGRES_PASSWORD: medbed
       POSTGRES_DB: medbed
     ports:
-      - "5435:5432"
+      - "${MAP_PORT_DB:-10510}:5432"
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - ${SSD_DATA}/map/postgres:/var/lib/postgresql/data
       - ./infra/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U medbed"]
@@ -21,9 +21,9 @@ services:
   redis:
     image: redis:7-alpine
     ports:
-      - "6379:6379"
+      - "${MAP_PORT_REDIS:-10514}:6379"
     volumes:
-      - redisdata:/data
+      - ${SSD_DATA}/map/redis:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -36,10 +36,10 @@ services:
       NEO4J_AUTH: neo4j/medbed_neo4j_pass
       NEO4J_PLUGINS: '["apoc"]'
     ports:
-      - "7474:7474"
-      - "7687:7687"
+      - "${MAP_PORT_NEO4J_HTTP:-10515}:7474"
+      - "${MAP_PORT_NEO4J_BOLT:-10516}:7687"
     volumes:
-      - neo4jdata:/data
+      - ${SSD_DATA}/map/neo4j:/data
     healthcheck:
       test: ["CMD", "neo4j", "status"]
       interval: 10s
@@ -51,10 +51,10 @@ services:
       context: ./api
       dockerfile: Dockerfile
     ports:
-      - "8010:8000"
+      - "${MAP_PORT_API:-10511}:8000"
     volumes:
       - ./api:/app
-      - uploads:/app/uploads
+      - ${SSD_DATA}/map/uploads:/app/uploads
     env_file:
       - .env
     depends_on:
@@ -72,7 +72,7 @@ services:
       dockerfile: Dockerfile
     volumes:
       - ./api:/app
-      - uploads:/app/uploads
+      - ${SSD_DATA}/map/uploads:/app/uploads
     env_file:
       - .env
     depends_on:
@@ -83,11 +83,12 @@ services:
     command: celery -A app.celery_app worker --loglevel=info
 
   web:
+    profiles: [prod]
     build:
       context: ./web
       dockerfile: Dockerfile
     ports:
-      - "3010:3000"
+      - "${MAP_PORT_WEB:-10513}:3000"
     volumes:
       - ./web:/app
       - /app/node_modules
@@ -95,17 +96,17 @@ services:
       - .env
     depends_on:
       - api
-    command: npm run dev
+    command: npx next dev -p 3000
 
   ml:
     build:
       context: ./ml
       dockerfile: Dockerfile
     ports:
-      - "8001:8001"
+      - "${MAP_PORT_ML:-10512}:8001"
     volumes:
       - ./ml:/app
-      - model_cache:/root/.cache/huggingface
+      - ${SSD_DATA}/map/model-cache:/root/.cache/huggingface
     env_file:
       - .env
     profiles:
@@ -117,10 +118,3 @@ services:
       retries: 3
       start_period: 30s
     command: uvicorn serve.handler:app --host 0.0.0.0 --port 8001 --reload
-
-volumes:
-  pgdata:
-  redisdata:
-  neo4jdata:
-  model_cache:
-  uploads:

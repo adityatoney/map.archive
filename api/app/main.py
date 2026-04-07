@@ -15,8 +15,8 @@ def create_app() -> FastAPI:
     settings = get_settings()
 
     app = FastAPI(
-        title="MedBed Insight API",
-        description="Medical analytics platform for Tesla Med Bed scan reports",
+        title="Medical Analytics Platform API",
+        description="Medical analytics platform for frequency-based body scan reports",
         version="0.1.0",
         debug=settings.DEBUG,
     )
@@ -25,14 +25,12 @@ def create_app() -> FastAPI:
     app.add_middleware(
         CORSMiddleware,
         allow_origins=[
-            "http://localhost:3000",
-            "http://localhost:3010",
-            "http://localhost:8000",
-            "http://localhost:8010",
-            "http://127.0.0.1:3000",
-            "http://127.0.0.1:3010",
-            "http://127.0.0.1:8000",
-            "http://127.0.0.1:8010",
+            "http://localhost:10513",
+            "http://localhost:10517",
+            "http://localhost:10511",
+            "http://127.0.0.1:10513",
+            "http://127.0.0.1:10517",
+            "http://127.0.0.1:10511",
         ],
         allow_credentials=True,
         allow_methods=["*"],
@@ -118,13 +116,13 @@ def create_app() -> FastAPI:
     @app.get("/")
     async def root():
         return {
-            "name": "MedBed Insight API",
+            "name": "Medical Analytics Platform API",
             "version": "0.1.0",
             "docs": "/docs",
         }
 
     logger.info(
-        "MedBed Insight API started (environment=%s, mock_mode=%s)",
+        "Medical Analytics Platform API started (environment=%s, mock_mode=%s)",
         settings.ENVIRONMENT,
         settings.is_mock_mode,
     )
