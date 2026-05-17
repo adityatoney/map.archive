@@ -1,6 +1,6 @@
-# MedBed Insight Analytics Platform
+# Medical Analytics Platform
 
-Medical analytics platform for Tesla Med Bed frequency-based body scan reports. Ingests scan reports, processes them through an NLP-powered pattern recognition pipeline, and presents diagnostic insights with recovery plan recommendations.
+Medical analytics platform for frequency-based body scan reports. Ingests scan reports, processes them through an NLP-powered pattern recognition pipeline, and presents diagnostic insights with recovery plan recommendations.
 
 ## Architecture
 
@@ -21,7 +21,7 @@ Layer 5: Dashboard + Recovery Plan → Next.js 14 + shadcn/ui + Recharts
 
 ```bash
 # 1. Clone and enter directory
-cd medBedIAP
+cd medical.analytics.platform
 
 # 2. Start all services
 make up
@@ -67,7 +67,7 @@ make clean       # Stop services and remove volumes
 ## Project Structure
 
 ```
-medbed-insight/
+medical.analytics.platform/
 ├── api/                 # FastAPI backend
 │   ├── app/
 │   │   ├── models/      # SQLAlchemy models (Patient, ScanSession, ScanEntry, etc.)
@@ -115,4 +115,4 @@ Copy `.env.example` to `.env`. Key variables:
 
 ## Medical Disclaimer
 
-MedBed Insight is an analytical exploration tool, not a medical diagnostic device. The information presented is derived from frequency-based scan data analysis and pattern recognition algorithms. It does not constitute medical advice, diagnosis, or treatment recommendations. Always consult a qualified healthcare professional before making health decisions.
+Medical Analytics Platform is an analytical exploration tool, not a medical diagnostic device. The information presented is derived from frequency-based scan data analysis and pattern recognition algorithms. It does not constitute medical advice, diagnosis, or treatment recommendations. Always consult a qualified healthcare professional before making health decisions.

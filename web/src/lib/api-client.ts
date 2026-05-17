@@ -1,5 +1,5 @@
 /**
- * Typed API client for the MedBed Insight FastAPI backend.
+ * Typed API client for the Medical Analytics Platform FastAPI backend.
  */
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";

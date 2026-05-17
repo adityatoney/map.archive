@@ -1,4 +1,4 @@
-# MedBed Insight — Operations Guide
+# Medical Analytics Platform — Operations Guide
 
 ## Port Mapping
 

@@ -16,6 +16,6 @@ export const useUIStore = create<UIStore>()(
       setSidebarCollapsed: (collapsed) =>
         set({ sidebarCollapsed: collapsed }),
     }),
-    { name: "medbed-ui-store" }
+    { name: "medical-analytics-platform-ui-store" }
   )
 );

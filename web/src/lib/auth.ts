@@ -37,7 +37,7 @@ async function refreshAccessToken(token: Record<string, unknown>) {
 export const authOptions: NextAuthOptions = {
   providers: [
     CredentialsProvider({
-      name: "MedBed Insight",
+      name: "Medical Analytics Platform",
       credentials: {
         email: { label: "Email", type: "email" },
         password: { label: "Password", type: "password" },

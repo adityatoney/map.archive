@@ -1,4 +1,4 @@
-# MedBed Insight Analytics Platform — Phase 1 Implementation Plan
+# Medical Analytics Platform — Phase 1 Implementation Plan
 
 ## Context
 Building a greenfield full-stack medical analytics platform that ingests Tesla Med Bed frequency-based body scan reports, processes them through an NLP pipeline, and presents diagnostic insights via an interactive dashboard. This Phase 1 establishes the complete foundation: monorepo structure, Docker Compose local dev stack, FastAPI backend with PostgreSQL schema, Next.js 14 frontend shell, and ML model serving setup.

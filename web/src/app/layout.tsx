@@ -8,9 +8,9 @@ import { ThemeProvider } from "@/components/providers/theme-provider";
 const inter = Inter({ subsets: ["latin"], variable: "--font-sans" });
 
 export const metadata: Metadata = {
-  title: "MedBed Insight",
+  title: "Medical Analytics Platform",
   description:
-    "Medical analytics platform for Tesla Med Bed frequency-based body scan reports",
+    "Medical analytics platform for frequency-based body scan reports",
 };
 
 export default function RootLayout({

@@ -418,7 +418,7 @@ class RecoveryPlannerService:
         )
 
         system_prompt = (
-            "You are a medical analytics summarizer for the MedBed Insight platform. "
+            "You are a medical analytics summarizer for the Medical Analytics Platform. "
             "Produce a 2-3 paragraph plain-language summary of scan analysis results. "
             "Be precise about the data — include specific counts and scores. "
             "Never provide medical advice or diagnosis. "

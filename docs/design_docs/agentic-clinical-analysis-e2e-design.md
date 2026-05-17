@@ -2,7 +2,7 @@
 
 ## Context
 
-The MedBed Insight platform has a full NLP pipeline (PDF → parse → normalize → embed → cluster → trend → composite risk → KG query → recovery plan) with a Neo4j knowledge graph (493 nodes, 1354 relationships). The recovery plan currently provides structured data (priority conditions, interventions, monitoring) but lacks **deep diagnostic reasoning** — identifying systemic cascade patterns like "gut dysfunction → nutrient malabsorption → liver stress → blood quality → nervous system effects."
+The Medical Analytics Platform has a full NLP pipeline (PDF → parse → normalize → embed → cluster → trend → composite risk → KG query → recovery plan) with a Neo4j knowledge graph (493 nodes, 1354 relationships). The recovery plan currently provides structured data (priority conditions, interventions, monitoring) but lacks **deep diagnostic reasoning** — identifying systemic cascade patterns like "gut dysfunction → nutrient malabsorption → liver stress → blood quality → nervous system effects."
 
 The user wants to leverage Claude to produce **agentic clinical insights**: root cause identification, organ-to-organ cascade chains, and pattern analysis grounded in the knowledge graph data. This is distinct from the existing recovery plan summary (which is a brief narrative). This is a full clinical analysis section with structured outputs.
 

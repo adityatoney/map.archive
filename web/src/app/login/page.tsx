@@ -49,7 +49,9 @@ export default function LoginPage() {
         <CardHeader className="text-center">
           <div className="flex items-center justify-center gap-2 mb-2">
             <Activity className="h-8 w-8 text-blue-600" />
-            <CardTitle className="text-2xl font-bold">MedBed Insight</CardTitle>
+            <CardTitle className="text-2xl font-bold">
+              Medical Analytics Platform
+            </CardTitle>
           </div>
           <CardDescription>
             Medical Analytics Platform
@@ -89,9 +91,9 @@ export default function LoginPage() {
           </form>
 
           <div className="mt-6 p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-md text-xs text-amber-800 dark:text-amber-200">
-            <strong>Disclaimer:</strong> MedBed Insight is an analytical
-            exploration tool, not a medical diagnostic device. Always consult a
-            qualified healthcare professional.
+            <strong>Disclaimer:</strong> Medical Analytics Platform is an
+            analytical exploration tool, not a medical diagnostic device.
+            Always consult a qualified healthcare professional.
           </div>
         </CardContent>
       </Card>

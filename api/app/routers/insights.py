@@ -61,7 +61,7 @@ class InsightsResponse(BaseModel):
 
 
 DISCLAIMER = (
-    "MedBed Insight is an analytical exploration tool. Patterns shown are "
+    "Medical Analytics Platform is an analytical exploration tool. Patterns shown are "
     "algorithmically detected correlations and do not constitute medical diagnosis. "
     "Always consult a qualified healthcare professional."
 )

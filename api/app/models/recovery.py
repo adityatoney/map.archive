@@ -10,7 +10,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base, TimestampMixin, UUIDMixin
 
 MEDICAL_DISCLAIMER = (
-    "IMPORTANT DISCLAIMER: MedBed Insight is an analytical exploration tool, "
+    "IMPORTANT DISCLAIMER: Medical Analytics Platform is an analytical exploration tool, "
     "not a medical diagnostic device. The information presented here is derived "
     "from frequency-based scan data analysis and pattern recognition algorithms. "
     "It does NOT constitute medical advice, diagnosis, or treatment recommendations. "

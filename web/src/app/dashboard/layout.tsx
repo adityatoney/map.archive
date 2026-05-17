@@ -264,7 +264,7 @@ export default function DashboardLayout({
           <Link href="/dashboard" className="flex items-center gap-2">
             <Activity className="h-6 w-6 text-blue-600" />
             <span className="font-bold text-lg hidden sm:inline">
-              MedBed Insight
+              Medical Analytics Platform
             </span>
           </Link>
 
@@ -330,11 +330,11 @@ export default function DashboardLayout({
         <div className="flex items-center gap-2 max-w-screen-xl mx-auto">
           <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400 flex-shrink-0" />
           <p className="text-xs text-amber-800 dark:text-amber-200">
-            <strong>Disclaimer:</strong> MedBed Insight is an analytical
-            exploration tool, not a medical diagnostic device. The information
-            presented does not constitute medical advice, diagnosis, or treatment
-            recommendations. Always consult a qualified healthcare professional
-            before making health decisions based on this data.
+            <strong>Disclaimer:</strong> Medical Analytics Platform is an
+            analytical exploration tool, not a medical diagnostic device. The
+            information presented does not constitute medical advice, diagnosis,
+            or treatment recommendations. Always consult a qualified healthcare
+            professional before making health decisions based on this data.
           </p>
         </div>
       </div>

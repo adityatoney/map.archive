@@ -21,6 +21,6 @@ export const usePatientStore = create<PatientStore>()(
       setPatients: (patients) => set({ patients }),
       setLatestSessionId: (id) => set({ latestSessionId: id }),
     }),
-    { name: "medbed-patient-store" }
+    { name: "medical-analytics-platform-patient-store" }
   )
 );
