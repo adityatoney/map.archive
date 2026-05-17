@@ -1,4 +1,4 @@
-version: "3.9"
+name: medbediap
 
 services:
   db:
@@ -10,7 +10,7 @@ services:
     ports:
       - "${MAP_PORT_DB:-10510}:5432"
     volumes:
-      - ${SSD_DATA}/map/postgres:/var/lib/postgresql/data
+      - ${SSD_DATA}/map.archive/postgres:/var/lib/postgresql/data
       - ./infra/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U medbed"]
@@ -23,7 +23,7 @@ services:
     ports:
       - "${MAP_PORT_REDIS:-10514}:6379"
     volumes:
-      - ${SSD_DATA}/map/redis:/data
+      - ${SSD_DATA}/map.archive/redis:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -39,7 +39,7 @@ services:
       - "${MAP_PORT_NEO4J_HTTP:-10515}:7474"
       - "${MAP_PORT_NEO4J_BOLT:-10516}:7687"
     volumes:
-      - ${SSD_DATA}/map/neo4j:/data
+      - ${SSD_DATA}/map.archive/neo4j:/data
     healthcheck:
       test: ["CMD", "neo4j", "status"]
       interval: 10s
@@ -54,7 +54,7 @@ services:
       - "${MAP_PORT_API:-10511}:8000"
     volumes:
       - ./api:/app
-      - ${SSD_DATA}/map/uploads:/app/uploads
+      - ${SSD_DATA}/map.archive/uploads:/app/uploads
     env_file:
       - .env
     depends_on:
@@ -72,7 +72,7 @@ services:
       dockerfile: Dockerfile
     volumes:
       - ./api:/app
-      - ${SSD_DATA}/map/uploads:/app/uploads
+      - ${SSD_DATA}/map.archive/uploads:/app/uploads
     env_file:
       - .env
     depends_on:
@@ -106,7 +106,7 @@ services:
       - "${MAP_PORT_ML:-10512}:8001"
     volumes:
       - ./ml:/app
-      - ${SSD_DATA}/map/model-cache:/root/.cache/huggingface
+      - ${SSD_DATA}/map.archive/model-cache:/root/.cache/huggingface
     env_file:
       - .env
     profiles:
